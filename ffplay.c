@@ -790,9 +790,8 @@ static int frame_queue_init (FrameQueue* f, PacketQueue* pktq, int max_size, int
 //{{{
 static void frame_queue_destroy (FrameQueue* f) {
 
-  int i;
-  for (i = 0; i < f->max_size; i++) {
-    Frame *vp = &f->queue[i];
+  for (int i = 0; i < f->max_size; i++) {
+    Frame* vp = &f->queue[i];
     frame_queue_unref_item (vp);
     av_frame_free (&vp->frame);
     }
@@ -935,7 +934,6 @@ static int realloc_texture (SDL_Texture** texture, Uint32 new_format,
 
   Uint32 format;
   int access, w, h;
-
   if (!*texture
       || SDL_QueryTexture (*texture, &format, &access, &w, &h) < 0
       || new_width != w || new_height != h
@@ -955,6 +953,7 @@ static int realloc_texture (SDL_Texture** texture, Uint32 new_format,
       int pitch;
       if (SDL_LockTexture (*texture, NULL, &pixels, &pitch) < 0)
         return -1;
+
       memset (pixels, 0, pitch * new_height);
       SDL_UnlockTexture (*texture);
       }
@@ -967,14 +966,14 @@ static int realloc_texture (SDL_Texture** texture, Uint32 new_format,
 //}}}
 //{{{
 static void calculate_display_rect (SDL_Rect* rect,
-                                   int scr_xleft, int scr_ytop, int scr_width, int scr_height,
-                                   int pic_width, int pic_height, AVRational pic_sar) {
+                                    int scr_xleft, int scr_ytop, int scr_width, int scr_height,
+                                    int pic_width, int pic_height, AVRational pic_sar) {
 
   AVRational aspect_ratio = pic_sar;
   int64_t width, height, x, y;
 
-  if (av_cmp_q (aspect_ratio, av_make_q(0, 1)) <= 0)
-    aspect_ratio = av_make_q(1, 1);
+  if (av_cmp_q (aspect_ratio, av_make_q (0, 1)) <= 0)
+    aspect_ratio = av_make_q (1, 1);
 
   aspect_ratio = av_mul_q (aspect_ratio, av_make_q(pic_width, pic_height));
 
@@ -1044,9 +1043,7 @@ static int upload_texture (SDL_Texture** tex, AVFrame* frame) {
     //{{{
     default:
       if (frame->linesize[0] < 0)
-        ret = SDL_UpdateTexture (*tex, NULL,
-                                 frame->data[0] + frame->linesize[0] * (frame->height - 1),
-                                 -frame->linesize[0]);
+        ret = SDL_UpdateTexture (*tex, NULL, frame->data[0] + frame->linesize[0] * (frame->height - 1), -frame->linesize[0]);
       else
         ret = SDL_UpdateTexture (*tex, NULL, frame->data[0], frame->linesize[0]);
       break;
@@ -1170,15 +1167,15 @@ static inline int compute_mod (int a, int b) {
 static void video_audio_display (VideoState* s) {
 
   int i, i_start, x, y1, y, ys, delay, n, nb_display_channels;
-  int ch, channels, h, h2;
+  int ch, h, h2;
   int64_t time_diff;
 
-  int rdft_bits, nb_freq;
+  int rdft_bits;
   for (rdft_bits = 1; (1 << rdft_bits) < 2 * s->height; rdft_bits++) ;
-  nb_freq = 1 << (rdft_bits - 1);
+  int nb_freq = 1 << (rdft_bits - 1);
 
   /* compute display index : center on currently output samples */
-  channels = s->audio_tgt.ch_layout.nb_channels;
+  int channels = s->audio_tgt.ch_layout.nb_channels;
   nb_display_channels = channels;
   if (!s->paused) {
     int data_used = s->show_mode == SHOW_MODE_WAVES ? s->width : (2*nb_freq);
@@ -1196,7 +1193,7 @@ static void video_audio_display (VideoState* s) {
     if (delay < data_used)
       delay = data_used;
 
-    i_start= x = compute_mod(s->sample_array_index - delay * channels, SAMPLE_ARRAY_SIZE);
+    i_start= x = compute_mod  (s->sample_array_index - delay * channels, SAMPLE_ARRAY_SIZE);
     if (s->show_mode == SHOW_MODE_WAVES) {
       h = INT_MIN;
       for (i = 0; i < 1000; i += channels) {
@@ -1259,7 +1256,7 @@ static void video_audio_display (VideoState* s) {
     if (s->xpos >= s->width)
       s->xpos = 0;
 
-    nb_display_channels= FFMIN (nb_display_channels, 2);
+    nb_display_channels = FFMIN (nb_display_channels, 2);
     if (rdft_bits != s->rdft_bits) {
       const float rdft_scale = 1.0;
       av_tx_uninit (&s->rdft);
@@ -1320,6 +1317,7 @@ static void video_audio_display (VideoState* s) {
     }
   }
 //}}}
+
 //{{{
 static void stream_component_close (VideoState *is, int stream_index) {
 
@@ -1434,6 +1432,7 @@ static void stream_close (VideoState* is) {
   av_free (is);
   }
 //}}}
+
 //{{{
 static void do_exit (VideoState* is)
 {
