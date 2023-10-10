@@ -57,60 +57,59 @@
 #include "compat/w32dlfcn.h"
 #endif
 //}}}
-AVDictionary *sws_dict;
-AVDictionary *swr_opts;
-AVDictionary *format_opts, *codec_opts;
+AVDictionary* sws_dict;
+AVDictionary* swr_opts;
+AVDictionary* format_opts, *codec_opts;
 int hide_banner = 0;
 
 //{{{
-void uninit_opts()
-{
-    av_dict_free(&swr_opts);
-    av_dict_free(&sws_dict);
-    av_dict_free(&format_opts);
-    av_dict_free(&codec_opts);
-}
+void uninit_opts() {
+
+  av_dict_free (&swr_opts);
+  av_dict_free (&sws_dict);
+  av_dict_free (&format_opts);
+  av_dict_free (&codec_opts);
+  }
 //}}}
 //{{{
-void log_callback_help (void *ptr, int level, const char *fmt, va_list vl)
-{
-    vfprintf(stdout, fmt, vl);
-}
+void log_callback_help (void *ptr, int level, const char *fmt, va_list vl) {
+  vfprintf(stdout, fmt, vl);
+  }
 //}}}
 //{{{
-void init_dynload()
-{
-#if HAVE_SETDLLDIRECTORY && defined(_WIN32)
+void init_dynload() {
+
+  #if HAVE_SETDLLDIRECTORY && defined(_WIN32)
     /* Calling SetDllDirectory with the empty string (but not NULL) removes the
      * current working directory from the DLL search path as a security pre-caution. */
-    SetDllDirectory("");
-#endif
-}
+    SetDllDirectory ("");
+  #endif
+  }
 
 //}}}
 //{{{
 int parse_number (const char *context, const char *numstr, int type,
-                 double min, double max, double *dst)
-{
-    char *tail;
-    const char *error;
-    double d = av_strtod(numstr, &tail);
-    if (*tail)
-        error = "Expected number for %s but found: %s\n";
-    else if (d < min || d > max)
-        error = "The value for %s was %s which is not within %f - %f\n";
-    else if (type == OPT_INT64 && (int64_t)d != d)
-        error = "Expected int64 for %s but found %s\n";
-    else if (type == OPT_INT && (int)d != d)
-        error = "Expected int for %s but found %s\n";
-    else {
-        *dst = d;
-        return 0;
+                  double min, double max, double *dst) {
+
+  char *tail;
+  const char *error;
+  double d = av_strtod (numstr, &tail);
+  if (*tail)
+    error = "Expected number for %s but found: %s\n";
+  else if (d < min || d > max)
+    error = "The value for %s was %s which is not within %f - %f\n";
+  else if (type == OPT_INT64 && (int64_t)d != d)
+    error = "Expected int64 for %s but found %s\n";
+  else if (type == OPT_INT && (int)d != d)
+    error = "Expected int for %s but found %s\n";
+  else {
+    *dst = d;
+    return 0;
     }
 
-    av_log(NULL, AV_LOG_FATAL, error, context, numstr, min, max);
-    return AVERROR(EINVAL);
-}
+  av_log (NULL, AV_LOG_FATAL, error, context, numstr, min, max);
+  return AVERROR(EINVAL);
+    }
 //}}}
 
 //{{{
@@ -882,7 +881,7 @@ int read_yesno()
 //}}}
 
 //{{{
-FILE *get_preset_file (char *filename, size_t filename_size,
+FILE* get_preset_file (char *filename, size_t filename_size,
                       const char *preset_name, int is_path,
                       const char *codec_name)
 {
@@ -1082,7 +1081,7 @@ int grow_array (void **array, int elem_size, int *size, int new_size)
 }
 //}}}
 //{{{
-void *allocate_array_elem (void *ptr, size_t elem_size, int *nb_elems)
+void* allocate_array_elem (void *ptr, size_t elem_size, int *nb_elems)
 {
     void *new_elem;
 
