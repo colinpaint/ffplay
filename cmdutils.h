@@ -21,6 +21,7 @@
  */
 //}}}
 #pragma once
+//{{{
 #include <stdint.h>
 
 #include "config.h"
@@ -28,54 +29,65 @@
 #include "libavfilter/avfilter.h"
 #include "libavformat/avformat.h"
 #include "libswscale/swscale.h"
+//}}}
 
 #ifdef _WIN32
 #undef main /* We don't want SDL to override our main() */
 #endif
 
+//{{{
 /**
  * program name, defined by the program for show_version().
  */
 extern const char program_name[];
-
+//}}}
+//{{{
 /**
  * program birth year, defined by the program for show_banner()
  */
 extern const int program_birth_year;
+//}}}
 
 extern AVDictionary *sws_dict;
 extern AVDictionary *swr_opts;
 extern AVDictionary *format_opts, *codec_opts;
 extern int hide_banner;
 
+//{{{
 /**
  * Initialize dynamic library loading
  */
-void init_dynload(void);
-
+void init_dynload();
+//}}}
+//{{{
 /**
  * Uninitialize the cmdutils option system, in particular
  * free the *_opts contexts and their contents.
  */
-void uninit_opts(void);
+void uninit_opts();
+//}}}
 
+//{{{
 /**
  * Trivial log callback.
  * Only suitable for opt_help and similar since it lacks prefix handling.
  */
-void log_callback_help(void* ptr, int level, const char* fmt, va_list vl);
-
+void log_callback_help (void* ptr, int level, const char* fmt, va_list vl);
+//}}}
+//{{{
 /**
  * Fallback for options that are not explicitly handled, these will be
  * parsed through AVOptions.
  */
-int opt_default(void *optctx, const char *opt, const char *arg);
-
+int opt_default (void *optctx, const char *opt, const char *arg);
+//}}}
+//{{{
 /**
  * Limit the execution time.
  */
-int opt_timelimit(void *optctx, const char *opt, const char *arg);
-
+int opt_timelimit (void *optctx, const char *opt, const char *arg);
+//}}}
+//{{{
 /**
  * Parse a string and return its corresponding value as a double.
  *
@@ -87,9 +99,11 @@ int opt_timelimit(void *optctx, const char *opt, const char *arg);
  * @param min the minimum valid accepted value
  * @param max the maximum valid accepted value
  */
-int parse_number(const char *context, const char *numstr, int type,
+int parse_number (const char *context, const char *numstr, int type,
                  double min, double max, double *dst);
+//}}}
 
+//{{{
 typedef struct SpecifierOpt {
     char *specifier;    /**< stream/chapter/program/... specifier */
     union {
@@ -101,7 +115,8 @@ typedef struct SpecifierOpt {
         double   dbl;
     } u;
 } SpecifierOpt;
-
+//}}}
+//{{{
 typedef struct OptionDef {
     const char *name;
     int flags;
@@ -135,7 +150,10 @@ typedef struct OptionDef {
     const char *help;
     const char *argname;
 } OptionDef;
+//}}}
 
+//{{{
+//{{{
 /**
  * Print help for all options matching specified flags.
  *
@@ -145,21 +163,27 @@ typedef struct OptionDef {
  * @param rej_flags don't print options which have any of those flags set.
  * @param alt_flags print only options that have at least one of those flags set
  */
-void show_help_options(const OptionDef *options, const char *msg, int req_flags,
+void show_help_options (const OptionDef *options, const char *msg, int req_flags,
                        int rej_flags, int alt_flags);
+//}}}
 
+//}}}
+//{{{
 /**
  * Show help for all options with given flags in class and all its
  * children.
  */
-void show_help_children(const AVClass *class, int flags);
-
+void show_help_children (const AVClass *class, int flags);
+//}}}
+//{{{
 /**
  * Per-fftool specific help handler. Implemented in each
  * fftool, called by show_help().
  */
-void show_help_default(const char *opt, const char *arg);
+void show_help_default (const char *opt, const char *arg);
+//}}}
 
+//{{{
 /**
  * Parse the command line arguments.
  *
@@ -172,17 +196,20 @@ void show_help_default(const char *opt, const char *arg);
  * argument without a leading option name flag. NULL if such arguments do
  * not have to be processed.
  */
-int parse_options(void *optctx, int argc, char **argv, const OptionDef *options,
+int parse_options (void *optctx, int argc, char **argv, const OptionDef *options,
                   int (* parse_arg_function)(void *optctx, const char*));
-
+//}}}
+//{{{
 /**
  * Parse one given option.
  *
  * @return on success 1 if arg was consumed, 0 otherwise; negative number on error
  */
-int parse_option(void *optctx, const char *opt, const char *arg,
+int parse_option (void *optctx, const char *opt, const char *arg,
                  const OptionDef *options);
+//}}}
 
+//{{{
 /**
  * An option extracted from the commandline.
  * Cannot use AVDictionary because of options like -map which can be
@@ -193,7 +220,8 @@ typedef struct Option {
     const char       *key;
     const char       *val;
 } Option;
-
+//}}}
+//{{{
 typedef struct OptionGroupDef {
     /**< group name */
     const char *name;
@@ -208,7 +236,8 @@ typedef struct OptionGroupDef {
      */
     int flags;
 } OptionGroupDef;
-
+//}}}
+//{{{
 typedef struct OptionGroup {
     const OptionGroupDef *group_def;
     const char *arg;
@@ -221,7 +250,8 @@ typedef struct OptionGroup {
     AVDictionary *sws_dict;
     AVDictionary *swr_opts;
 } OptionGroup;
-
+//}}}
+//{{{
 /**
  * A list of option groups that all have the same group type
  * (e.g. input files or output files)
@@ -232,7 +262,8 @@ typedef struct OptionGroupList {
     OptionGroup *groups;
     int       nb_groups;
 } OptionGroupList;
-
+//}}}
+//{{{
 typedef struct OptionParseContext {
     OptionGroup global_opts;
 
@@ -242,14 +273,18 @@ typedef struct OptionParseContext {
     /* parsing state */
     OptionGroup cur_group;
 } OptionParseContext;
+//}}}
 
+//{{{
 /**
  * Parse an options group and write results into optctx.
  *
  * @param optctx an app-specific options context. NULL for global options group
  */
-int parse_optgroup(void *optctx, OptionGroup *g);
+int parse_optgroup (void *optctx, OptionGroup *g);
+//}}}
 
+//{{{
 /**
  * Split the commandline into an intermediate form convenient for further
  * processing.
@@ -268,26 +303,31 @@ int parse_optgroup(void *optctx, OptionGroup *g);
  * OptionGroupList in OptionParseContext.groups. The order of group lists is the
  * same as the order of group definitions.
  */
-int split_commandline(OptionParseContext *octx, int argc, char *argv[],
+int split_commandline (OptionParseContext *octx, int argc, char *argv[],
                       const OptionDef *options,
                       const OptionGroupDef *groups, int nb_groups);
 
+//}}}
+//{{{
 /**
  * Free all allocated memory in an OptionParseContext.
  */
-void uninit_parse_context(OptionParseContext *octx);
-
+void uninit_parse_context (OptionParseContext *octx);
+//}}}
+//{{{
 /**
  * Find the '-loglevel' option in the command line args and apply it.
  */
-void parse_loglevel(int argc, char **argv, const OptionDef *options);
-
+void parse_loglevel (int argc, char **argv, const OptionDef *options);
+//}}}
+//{{{
 /**
  * Return index of option opt in argv or 0 if not found.
  */
-int locate_option(int argc, char **argv, const OptionDef *options,
+int locate_option (int argc, char **argv, const OptionDef *options,
                   const char *optname);
-
+//}}}
+//{{{
 /**
  * Check if the given stream matches a stream specifier.
  *
@@ -297,8 +337,9 @@ int locate_option(int argc, char **argv, const OptionDef *options,
  *
  * @return 1 if the stream matches, 0 if it doesn't, <0 on error
  */
-int check_stream_specifier(AVFormatContext *s, AVStream *st, const char *spec);
-
+int check_stream_specifier (AVFormatContext *s, AVStream *st, const char *spec);
+//}}}
+//{{{
 /**
  * Filter out options for given codec.
  *
@@ -314,10 +355,11 @@ int check_stream_specifier(AVFormatContext *s, AVStream *st, const char *spec);
  * @param dst a pointer to the created dictionary
  * @return a non-negative number on success, a negative error code on failure
  */
-int filter_codec_opts(const AVDictionary *opts, enum AVCodecID codec_id,
+int filter_codec_opts (const AVDictionary *opts, enum AVCodecID codec_id,
                       AVFormatContext *s, AVStream *st, const AVCodec *codec,
                       AVDictionary **dst);
-
+//}}}
+//{{{
 /**
  * Setup AVCodecContext options for avformat_find_stream_info().
  *
@@ -326,10 +368,11 @@ int filter_codec_opts(const AVDictionary *opts, enum AVCodecID codec_id,
  * Each dictionary will contain the options from codec_opts which can
  * be applied to the corresponding stream codec context.
  */
-int setup_find_stream_info_opts(AVFormatContext *s,
+int setup_find_stream_info_opts (AVFormatContext *s,
                                 AVDictionary *codec_opts,
                                 AVDictionary ***dst);
-
+//}}}
+//{{{
 /**
  * Print an error message to stderr, indicating filename and a human
  * readable description of the error code err.
@@ -339,21 +382,24 @@ int setup_find_stream_info_opts(AVFormatContext *s,
  *
  * @see av_strerror()
  */
-void print_error(const char *filename, int err);
-
+void print_error (const char *filename, int err);
+//}}}
+//{{{
 /**
  * Print the program banner to stderr. The banner contents depend on the
  * current version of the repository and of the libav* libraries used by
  * the program.
  */
-void show_banner(int argc, char **argv, const OptionDef *options);
-
+void show_banner (int argc, char **argv, const OptionDef *options);
+//}}}
+//{{{
 /**
  * Return a positive value if a line read from standard input
  * starts with [yY], otherwise return 0.
  */
-int read_yesno(void);
-
+int read_yesno();
+//}}}
+//{{{
 /**
  * Get a file corresponding to a preset file.
  *
@@ -372,9 +418,10 @@ int read_yesno(void);
  * @param codec_name name of the codec for which to look for the
  * preset, may be NULL
  */
-FILE *get_preset_file(char *filename, size_t filename_size,
+FILE* get_preset_file (char *filename, size_t filename_size,
                       const char *preset_name, int is_path, const char *codec_name);
-
+//}}}
+//{{{
 /**
  * Realloc array to hold new_size elements of elem_size.
  *
@@ -385,8 +432,9 @@ FILE *get_preset_file(char *filename, size_t filename_size,
  * @param new_size number of elements to place in reallocated array
  * @return a non-negative number on success, a negative error code on failure
  */
-int grow_array(void **array, int elem_size, int *size, int new_size);
-
+int grow_array (void **array, int elem_size, int *size, int new_size);
+//}}}
+//{{{
 /**
  * Atomically add a new element to an array of pointers, i.e. allocate
  * a new entry, reallocate the array of pointers and make the new last
@@ -398,22 +446,13 @@ int grow_array(void **array, int elem_size, int *size, int new_size);
  *                  *nb_elems will be incremented by one by this function.
  * @return pointer to the newly allocated entry or NULL on failure
  */
-void *allocate_array_elem(void *array, size_t elem_size, int *nb_elems);
+void*  allocate_array_elem (void *array, size_t elem_size, int *nb_elems);
+//}}}
 
-#define GROW_ARRAY(array, nb_elems)\
-    grow_array((void**)&array, sizeof(*array), &nb_elems, nb_elems + 1)
+#define GROW_ARRAY(array, nb_elems) grow_array((void**)&array, sizeof(*array), &nb_elems, nb_elems + 1)
+#define GET_PIX_FMT_NAME(pix_fmt) const char *name = av_get_pix_fmt_name(pix_fmt);
+#define GET_CODEC_NAME(id) const char *name = avcodec_descriptor_get(id)->name;
+#define GET_SAMPLE_FMT_NAME(sample_fmt) const char *name = av_get_sample_fmt_name(sample_fmt)
+#define GET_SAMPLE_RATE_NAME(rate) char name[16]; snprintf(name, sizeof(name), "%d", rate);
 
-#define GET_PIX_FMT_NAME(pix_fmt)\
-    const char *name = av_get_pix_fmt_name(pix_fmt);
-
-#define GET_CODEC_NAME(id)\
-    const char *name = avcodec_descriptor_get(id)->name;
-
-#define GET_SAMPLE_FMT_NAME(sample_fmt)\
-    const char *name = av_get_sample_fmt_name(sample_fmt)
-
-#define GET_SAMPLE_RATE_NAME(rate)\
-    char name[16];\
-    snprintf(name, sizeof(name), "%d", rate);
-
-double get_rotation(const int32_t *displaymatrix);
+double get_rotation (const int32_t *displaymatrix);
