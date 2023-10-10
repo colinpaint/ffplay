@@ -455,24 +455,25 @@ static inline int cmp_audio_fmts (enum AVSampleFormat fmt1, int64_t channel_coun
 //{{{
 static int packet_queue_put_private (PacketQueue* q, AVPacket* pkt) {
 
-  MyAVPacketList pkt1;
   int ret;
 
   if (q->abort_request)
-     return -1;
+    return -1;
 
+  MyAVPacketList pkt1;
   pkt1.pkt = pkt;
   pkt1.serial = q->serial;
 
-  ret = av_fifo_write(q->pkt_list, &pkt1, 1);
+  ret = av_fifo_write (q->pkt_list, &pkt1, 1);
   if (ret < 0)
-     return ret;
+    return ret;
+
   q->nb_packets++;
   q->size += pkt1.pkt->size + sizeof(pkt1);
   q->duration += pkt1.pkt->duration;
 
   /* XXX: should duplicate packet data in DV case */
-  SDL_CondSignal(q->cond);
+  SDL_CondSignal (q->cond);
   return 0;
   }
 //}}}
@@ -502,7 +503,7 @@ static int packet_queue_put (PacketQueue* q, AVPacket* pkt) {
 static int packet_queue_put_nullpacket (PacketQueue* q, AVPacket* pkt, int stream_index) {
 
   pkt->stream_index = stream_index;
-  return packet_queue_put(q, pkt);
+  return packet_queue_put (q, pkt);
   }
 //}}}
 //{{{
@@ -511,19 +512,19 @@ static int packet_queue_init (PacketQueue* q) {
 
   memset (q, 0, sizeof(PacketQueue));
 
-  q->pkt_list = av_fifo_alloc2(1, sizeof(MyAVPacketList), AV_FIFO_FLAG_AUTO_GROW);
+  q->pkt_list = av_fifo_alloc2 (1, sizeof(MyAVPacketList), AV_FIFO_FLAG_AUTO_GROW);
   if (!q->pkt_list)
     return AVERROR(ENOMEM);
 
   q->mutex = SDL_CreateMutex();
   if (!q->mutex) {
-    av_log(NULL, AV_LOG_FATAL, "SDL_CreateMutex(): %s\n", SDL_GetError());
+    av_log (NULL, AV_LOG_FATAL, "SDL_CreateMutex(): %s\n", SDL_GetError());
     return AVERROR(ENOMEM);
     }
 
   q->cond = SDL_CreateCond();
   if (!q->cond) {
-    av_log(NULL, AV_LOG_FATAL, "SDL_CreateCond(): %s\n", SDL_GetError());
+    av_log (NULL, AV_LOG_FATAL, "SDL_CreateCond(): %s\n", SDL_GetError());
     return AVERROR(ENOMEM);
     }
 
@@ -551,33 +552,33 @@ static void packet_queue_flush (PacketQueue* q) {
 //{{{
 static void packet_queue_destroy (PacketQueue* q) {
 
-  packet_queue_flush(q);
-  av_fifo_freep2(&q->pkt_list);
+  packet_queue_flush (q);
+  av_fifo_freep2 (&q->pkt_list);
 
-  SDL_DestroyMutex(q->mutex);
-  SDL_DestroyCond(q->cond);
+  SDL_DestroyMutex (q->mutex);
+  SDL_DestroyCond (q->cond);
   }
 //}}}
 //{{{
 static void packet_queue_abort (PacketQueue* q) {
 
-  SDL_LockMutex(q->mutex);
+  SDL_LockMutex (q->mutex);
 
   q->abort_request = 1;
-  SDL_CondSignal(q->cond);
+  SDL_CondSignal (q->cond);
 
-  SDL_UnlockMutex(q->mutex);
+  SDL_UnlockMutex (q->mutex);
   }
 //}}}
 //{{{
 static void packet_queue_start (PacketQueue* q) {
 
-  SDL_LockMutex(q->mutex);
+  SDL_LockMutex (q->mutex);
 
   q->abort_request = 0;
   q->serial++;
 
-  SDL_UnlockMutex(q->mutex);
+  SDL_UnlockMutex (q->mutex);
   }
 //}}}
 //{{{
@@ -624,9 +625,11 @@ static int packet_queue_get (PacketQueue* q, AVPacket* pkt, int block, int* seri
 static int decoder_init (Decoder* d, AVCodecContext* avctx, PacketQueue* queue, SDL_cond *empty_queue_cond) {
 
   memset(d, 0, sizeof(Decoder));
+
   d->pkt = av_packet_alloc();
   if (!d->pkt)
     return AVERROR(ENOMEM);
+
   d->avctx = avctx;
   d->queue = queue;
   d->empty_queue_cond = empty_queue_cond;
@@ -706,12 +709,12 @@ static int decoder_decode_frame (Decoder* d, AVFrame* frame, AVSubtitle *sub) {
         }
       if (d->queue->serial == d->pkt_serial)
         break;
-      av_packet_unref(d->pkt);
+      av_packet_unref (d->pkt);
       } while (1);
 
     if (d->avctx->codec_type == AVMEDIA_TYPE_SUBTITLE) {
       int got_frame = 0;
-      ret = avcodec_decode_subtitle2(d->avctx, sub, &got_frame, d->pkt);
+      ret = avcodec_decode_subtitle2 (d->avctx, sub, &got_frame, d->pkt);
       if (ret < 0) {
          ret = AVERROR(EAGAIN);
         }
@@ -727,19 +730,19 @@ static int decoder_decode_frame (Decoder* d, AVFrame* frame, AVSubtitle *sub) {
       if (d->pkt->buf && !d->pkt->opaque_ref) {
         FrameData *fd;
 
-        d->pkt->opaque_ref = av_buffer_allocz(sizeof(*fd));
+        d->pkt->opaque_ref = av_buffer_allocz (sizeof(*fd));
         if (!d->pkt->opaque_ref)
           return AVERROR(ENOMEM);
         fd = (FrameData*)d->pkt->opaque_ref->data;
         fd->pkt_pos = d->pkt->pos;
         }
 
-      if (avcodec_send_packet(d->avctx, d->pkt) == AVERROR(EAGAIN)) {
+      if (avcodec_send_packet (d->avctx, d->pkt) == AVERROR(EAGAIN)) {
         av_log(d->avctx, AV_LOG_ERROR, "Receive_frame and send_packet both returned EAGAIN, which is an API violation.\n");
         d->packet_pending = 1;
         }
       else {
-        av_packet_unref(d->pkt);
+        av_packet_unref (d->pkt);
         }
       }
    }
@@ -757,8 +760,8 @@ static void decoder_destroy (Decoder* d) {
 //{{{
 static void frame_queue_unref_item (Frame* vp) {
 
-  av_frame_unref(vp->frame);
-  avsubtitle_free(&vp->sub);
+  av_frame_unref (vp->frame);
+  avsubtitle_free (&vp->sub);
   }
 //}}}
 //{{{
@@ -767,12 +770,12 @@ static int frame_queue_init (FrameQueue* f, PacketQueue* pktq, int max_size, int
   int i;
   memset(f, 0, sizeof(FrameQueue));
   if (!(f->mutex = SDL_CreateMutex())) {
-    av_log(NULL, AV_LOG_FATAL, "SDL_CreateMutex(): %s\n", SDL_GetError());
+    av_log (NULL, AV_LOG_FATAL, "SDL_CreateMutex(): %s\n", SDL_GetError());
     return AVERROR(ENOMEM);
     }
 
   if (!(f->cond = SDL_CreateCond())) {
-    av_log(NULL, AV_LOG_FATAL, "SDL_CreateCond(): %s\n", SDL_GetError());
+    av_log (NULL, AV_LOG_FATAL, "SDL_CreateCond(): %s\n", SDL_GetError());
     return AVERROR(ENOMEM);
     }
 
@@ -792,12 +795,12 @@ static void frame_queue_destroy (FrameQueue* f) {
   int i;
   for (i = 0; i < f->max_size; i++) {
     Frame *vp = &f->queue[i];
-    frame_queue_unref_item(vp);
-    av_frame_free(&vp->frame);
+    frame_queue_unref_item (vp);
+    av_frame_free (&vp->frame);
     }
 
-  SDL_DestroyMutex(f->mutex);
-  SDL_DestroyCond(f->cond);
+  SDL_DestroyMutex (f->mutex);
+  SDL_DestroyCond (f->cond);
   }
 //}}}
 //{{{
@@ -829,11 +832,10 @@ static Frame* frame_queue_peek_writable (FrameQueue* f) {
   /* wait until we have space to put a new frame */
   SDL_LockMutex(f->mutex);
 
-  while (f->size >= f->max_size &&
-         !f->pktq->abort_request) {
-    SDL_CondWait(f->cond, f->mutex);
+  while (f->size >= f->max_size && !f->pktq->abort_request) {
+    SDL_CondWait (f->cond, f->mutex);
     }
-   SDL_UnlockMutex(f->mutex);
+   SDL_UnlockMutex (f->mutex);
 
   if (f->pktq->abort_request)
     return NULL;
@@ -847,9 +849,9 @@ static Frame* frame_queue_peek_readable (FrameQueue* f) {
   /* wait until we have a readable a new frame */
   SDL_LockMutex(f->mutex);
   while (f->size - f->rindex_shown <= 0 && !f->pktq->abort_request) {
-    SDL_CondWait(f->cond, f->mutex);
+    SDL_CondWait (f->cond, f->mutex);
     }
-   SDL_UnlockMutex(f->mutex);
+   SDL_UnlockMutex (f->mutex);
 
   if (f->pktq->abort_request)
     return NULL;
@@ -863,10 +865,10 @@ static void frame_queue_push (FrameQueue* f) {
   if (++f->windex == f->max_size)
     f->windex = 0;
 
-  SDL_LockMutex(f->mutex);
+  SDL_LockMutex (f->mutex);
   f->size++;
-  SDL_CondSignal(f->cond);
-  SDL_UnlockMutex(f->mutex);
+  SDL_CondSignal (f->cond);
+  SDL_UnlockMutex (f->mutex);
   }
 //}}}
 //{{{
@@ -881,10 +883,10 @@ static void frame_queue_next (FrameQueue* f) {
   if (++f->rindex == f->max_size)
     f->rindex = 0;
 
-  SDL_LockMutex(f->mutex);
+  SDL_LockMutex (f->mutex);
   f->size--;
-  SDL_CondSignal(f->cond);
-  SDL_UnlockMutex(f->mutex);
+  SDL_CondSignal (f->cond);
+  SDL_UnlockMutex (f->mutex);
   }
 //}}}
 //{{{
@@ -908,12 +910,12 @@ static int64_t frame_queue_last_pos (FrameQueue* f) {
 //{{{
 static void decoder_abort (Decoder* d, FrameQueue* fq) {
 
-  packet_queue_abort(d->queue);
-  frame_queue_signal(fq);
-  SDL_WaitThread(d->decoder_tid, NULL);
+  packet_queue_abort (d->queue);
+  frame_queue_signal (fq);
+  SDL_WaitThread (d->decoder_tid, NULL);
 
   d->decoder_tid = NULL;
-  packet_queue_flush(d->queue);
+  packet_queue_flush (d->queue);
   }
 //}}}
 //{{{
@@ -926,7 +928,7 @@ static inline void fill_rectangle (int x, int y, int w, int h) {
   rect.h = h;
 
   if (w && h)
-    SDL_RenderFillRect(renderer, &rect);
+    SDL_RenderFillRect (renderer, &rect);
   }
 //}}}
 //{{{
@@ -936,27 +938,30 @@ static int realloc_texture (SDL_Texture** texture, Uint32 new_format,
   Uint32 format;
   int access, w, h;
 
-  if (!*texture || SDL_QueryTexture(*texture, &format, &access, &w, &h) < 0 || new_width != w || new_height != h || new_format != format) {
-    void *pixels;
-    int pitch;
+  if (!*texture 
+      || SDL_QueryTexture (*texture, &format, &access, &w, &h) < 0
+      || new_width != w || new_height != h 
+      || new_format != format) {
 
     if (*texture)
-      SDL_DestroyTexture(*texture);
+      SDL_DestroyTexture (*texture);
 
-    if (!(*texture = SDL_CreateTexture(renderer, new_format, SDL_TEXTUREACCESS_STREAMING, new_width, new_height)))
+    if (!(*texture = SDL_CreateTexture (renderer, new_format, SDL_TEXTUREACCESS_STREAMING, new_width, new_height)))
       return -1;
 
-    if (SDL_SetTextureBlendMode(*texture, blendmode) < 0)
+    if (SDL_SetTextureBlendMode (*texture, blendmode) < 0)
       return -1;
 
     if (init_texture) {
-      if (SDL_LockTexture(*texture, NULL, &pixels, &pitch) < 0)
+      void* pixels;
+      int pitch;
+      if (SDL_LockTexture (*texture, NULL, &pixels, &pitch) < 0)
         return -1;
-      memset(pixels, 0, pitch * new_height);
-      SDL_UnlockTexture(*texture);
+      memset (pixels, 0, pitch * new_height);
+      SDL_UnlockTexture (*texture);
       }
 
-    av_log(NULL, AV_LOG_VERBOSE, "Created %dx%d texture with %s.\n", new_width, new_height, SDL_GetPixelFormatName(new_format));
+    av_log (NULL, AV_LOG_VERBOSE, "Created %dx%d texture with %s.\n", new_width, new_height, SDL_GetPixelFormatName(new_format));
     }
 
   return 0;
@@ -970,17 +975,17 @@ static void calculate_display_rect (SDL_Rect* rect,
   AVRational aspect_ratio = pic_sar;
   int64_t width, height, x, y;
 
-  if (av_cmp_q(aspect_ratio, av_make_q(0, 1)) <= 0)
+  if (av_cmp_q (aspect_ratio, av_make_q(0, 1)) <= 0)
     aspect_ratio = av_make_q(1, 1);
 
-  aspect_ratio = av_mul_q(aspect_ratio, av_make_q(pic_width, pic_height));
+  aspect_ratio = av_mul_q (aspect_ratio, av_make_q(pic_width, pic_height));
 
   /* XXX: we suppose the screen has a 1.0 pixel ratio */
   height = scr_height;
-  width = av_rescale(height, aspect_ratio.num, aspect_ratio.den) & ~1;
+  width = av_rescale (height, aspect_ratio.num, aspect_ratio.den) & ~1;
   if (width > scr_width) {
     width = scr_width;
-    height = av_rescale(width, aspect_ratio.den, aspect_ratio.num) & ~1;
+    height = av_rescale (width, aspect_ratio.den, aspect_ratio.num) & ~1;
     }
 
   x = (scr_width - width) / 2;
@@ -1005,7 +1010,7 @@ static void get_sdl_pix_fmt_and_blendmode (int format, Uint32* sdl_pix_fmt, SDL_
       format == AV_PIX_FMT_BGR32_1)
     *sdl_blendmode = SDL_BLENDMODE_BLEND;
 
-   for (i = 0; i < FF_ARRAY_ELEMS(sdl_texture_format_map) - 1; i++) {
+   for (i = 0; i < FF_ARRAY_ELEMS (sdl_texture_format_map) - 1; i++) {
     if (format == sdl_texture_format_map[i].format) {
       *sdl_pix_fmt = sdl_texture_format_map[i].texture_fmt;
       return;
@@ -1020,35 +1025,41 @@ static int upload_texture (SDL_Texture** tex, AVFrame* frame) {
   Uint32 sdl_pix_fmt;
 
   SDL_BlendMode sdl_blendmode;
-  get_sdl_pix_fmt_and_blendmode(frame->format, &sdl_pix_fmt, &sdl_blendmode);
-  if (realloc_texture(tex, sdl_pix_fmt == SDL_PIXELFORMAT_UNKNOWN ? SDL_PIXELFORMAT_ARGB8888 : sdl_pix_fmt, frame->width, frame->height, sdl_blendmode, 0) < 0)
+  get_sdl_pix_fmt_and_blendmode (frame->format, &sdl_pix_fmt, &sdl_blendmode);
+  if (realloc_texture (tex, sdl_pix_fmt == SDL_PIXELFORMAT_UNKNOWN ? SDL_PIXELFORMAT_ARGB8888 : sdl_pix_fmt, 
+                       frame->width, frame->height, sdl_blendmode, 0) < 0)
     return -1;
 
   switch (sdl_pix_fmt) {
     //{{{
     case SDL_PIXELFORMAT_IYUV:
-        if (frame->linesize[0] > 0 && frame->linesize[1] > 0 && frame->linesize[2] > 0) {
-            ret = SDL_UpdateYUVTexture(*tex, NULL, frame->data[0], frame->linesize[0],
-                                                   frame->data[1], frame->linesize[1],
-                                                   frame->data[2], frame->linesize[2]);
-        } else if (frame->linesize[0] < 0 && frame->linesize[1] < 0 && frame->linesize[2] < 0) {
-            ret = SDL_UpdateYUVTexture(*tex, NULL, frame->data[0] + frame->linesize[0] * (frame->height                    - 1), -frame->linesize[0],
-                                                   frame->data[1] + frame->linesize[1] * (AV_CEIL_RSHIFT(frame->height, 1) - 1), -frame->linesize[1],
-                                                   frame->data[2] + frame->linesize[2] * (AV_CEIL_RSHIFT(frame->height, 1) - 1), -frame->linesize[2]);
-        } else {
-            av_log(NULL, AV_LOG_ERROR, "Mixed negative and positive linesizes are not supported.\n");
-            return -1;
+      if (frame->linesize[0] > 0 && frame->linesize[1] > 0 && frame->linesize[2] > 0) {
+        ret = SDL_UpdateYUVTexture (*tex, NULL, frame->data[0], frame->linesize[0],
+                                                frame->data[1], frame->linesize[1],
+                                                frame->data[2], frame->linesize[2]);
+        } 
+      else if (frame->linesize[0] < 0 && frame->linesize[1] < 0 && frame->linesize[2] < 0) {
+        ret = SDL_UpdateYUVTexture (*tex, NULL, frame->data[0] + frame->linesize[0] * (frame->height                    - 1), -frame->linesize[0],
+                                                frame->data[1] + frame->linesize[1] * (AV_CEIL_RSHIFT(frame->height, 1) - 1), -frame->linesize[1],
+                                                frame->data[2] + frame->linesize[2] * (AV_CEIL_RSHIFT(frame->height, 1) - 1), -frame->linesize[2]);
+        } 
+      else {
+        av_log (NULL, AV_LOG_ERROR, "Mixed negative and positive linesizes are not supported.\n");
+        return -1;
         }
-        break;
+      break;
     //}}}
     //{{{
     default:
-        if (frame->linesize[0] < 0) {
-            ret = SDL_UpdateTexture(*tex, NULL, frame->data[0] + frame->linesize[0] * (frame->height - 1), -frame->linesize[0]);
-        } else {
-            ret = SDL_UpdateTexture(*tex, NULL, frame->data[0], frame->linesize[0]);
+      if (frame->linesize[0] < 0) {
+        ret = SDL_UpdateTexture (*tex, NULL, 
+                                 frame->data[0] + frame->linesize[0] * (frame->height - 1), 
+                                 -frame->linesize[0]);
+        } 
+      else {
+        ret = SDL_UpdateTexture (*tex, NULL, frame->data[0], frame->linesize[0]);
         }
-        break;
+      break;
     //}}}
     }
 
@@ -1062,7 +1073,9 @@ static void set_sdl_yuv_conversion_mode (AVFrame* frame) {
   #if SDL_VERSION_ATLEAST(2,0,8)
     SDL_YUV_CONVERSION_MODE mode = SDL_YUV_CONVERSION_AUTOMATIC;
 
-    if (frame && (frame->format == AV_PIX_FMT_YUV420P || frame->format == AV_PIX_FMT_YUYV422 || frame->format == AV_PIX_FMT_UYVY422)) {
+    if (frame && (frame->format == AV_PIX_FMT_YUV420P 
+                  || frame->format == AV_PIX_FMT_YUYV422 
+                  || frame->format == AV_PIX_FMT_UYVY422)) {
       if (frame->color_range == AVCOL_RANGE_JPEG)
          mode = SDL_YUV_CONVERSION_JPEG;
       else if (frame->colorspace == AVCOL_SPC_BT709)
@@ -1071,7 +1084,7 @@ static void set_sdl_yuv_conversion_mode (AVFrame* frame) {
         mode = SDL_YUV_CONVERSION_BT601;
       }
 
-    SDL_SetYUVConversionMode(mode); /* FIXME: no support for linear transfer */
+    SDL_SetYUVConversionMode (mode); /* FIXME: no support for linear transfer */
   #endif
   }
 //}}}
@@ -1171,157 +1184,162 @@ static inline int compute_mod (int a, int b)
 }
 //}}}
 //{{{
-static void video_audio_display (VideoState* s)
-{
-    int i, i_start, x, y1, y, ys, delay, n, nb_display_channels;
-    int ch, channels, h, h2;
-    int64_t time_diff;
-    int rdft_bits, nb_freq;
+static void video_audio_display (VideoState* s) {
 
-    for (rdft_bits = 1; (1 << rdft_bits) < 2 * s->height; rdft_bits++)
-        ;
-    nb_freq = 1 << (rdft_bits - 1);
+  int i, i_start, x, y1, y, ys, delay, n, nb_display_channels;
+  int ch, channels, h, h2;
+  int64_t time_diff;
+  int rdft_bits, nb_freq;
 
-    /* compute display index : center on currently output samples */
-    channels = s->audio_tgt.ch_layout.nb_channels;
-    nb_display_channels = channels;
-    if (!s->paused) {
-        int data_used= s->show_mode == SHOW_MODE_WAVES ? s->width : (2*nb_freq);
-        n = 2 * channels;
-        delay = s->audio_write_buf_size;
-        delay /= n;
+  for (rdft_bits = 1; (1 << rdft_bits) < 2 * s->height; rdft_bits++)
+    ;
+  nb_freq = 1 << (rdft_bits - 1);
 
-        /* to be more precise, we take into account the time spent since
-           the last buffer computation */
-        if (audio_callback_time) {
-            time_diff = av_gettime_relative() - audio_callback_time;
-            delay -= (time_diff * s->audio_tgt.freq) / 1000000;
-        }
+  /* compute display index : center on currently output samples */
+  channels = s->audio_tgt.ch_layout.nb_channels;
+  nb_display_channels = channels;
+  if (!s->paused) {
+    int data_used= s->show_mode == SHOW_MODE_WAVES ? s->width : (2*nb_freq);
+    n = 2 * channels;
+    delay = s->audio_write_buf_size;
+    delay /= n;
 
-        delay += 2 * data_used;
-        if (delay < data_used)
-            delay = data_used;
-
-        i_start= x = compute_mod(s->sample_array_index - delay * channels, SAMPLE_ARRAY_SIZE);
-        if (s->show_mode == SHOW_MODE_WAVES) {
-            h = INT_MIN;
-            for (i = 0; i < 1000; i += channels) {
-                int idx = (SAMPLE_ARRAY_SIZE + x - i) % SAMPLE_ARRAY_SIZE;
-                int a = s->sample_array[idx];
-                int b = s->sample_array[(idx + 4 * channels) % SAMPLE_ARRAY_SIZE];
-                int c = s->sample_array[(idx + 5 * channels) % SAMPLE_ARRAY_SIZE];
-                int d = s->sample_array[(idx + 9 * channels) % SAMPLE_ARRAY_SIZE];
-                int score = a - d;
-                if (h < score && (b ^ c) < 0) {
-                    h = score;
-                    i_start = idx;
-                }
-            }
-        }
-
-        s->last_i_start = i_start;
-    } else {
-        i_start = s->last_i_start;
+    /* to be more precise, we take into account the time spent since
+       the last buffer computation */
+    if (audio_callback_time) {
+        time_diff = av_gettime_relative() - audio_callback_time;
+        delay -= (time_diff * s->audio_tgt.freq) / 1000000;
     }
 
+    delay += 2 * data_used;
+    if (delay < data_used)
+        delay = data_used;
+
+    i_start= x = compute_mod(s->sample_array_index - delay * channels, SAMPLE_ARRAY_SIZE);
     if (s->show_mode == SHOW_MODE_WAVES) {
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-
-        /* total height for one channel */
-        h = s->height / nb_display_channels;
-        /* graph height / 2 */
-        h2 = (h * 9) / 20;
-        for (ch = 0; ch < nb_display_channels; ch++) {
-            i = i_start + ch;
-            y1 = s->ytop + ch * h + (h / 2); /* position of center line */
-            for (x = 0; x < s->width; x++) {
-                y = (s->sample_array[i] * h2) >> 15;
-                if (y < 0) {
-                    y = -y;
-                    ys = y1 - y;
-                } else {
-                    ys = y1;
-                }
-                fill_rectangle(s->xleft + x, ys, 1, y);
-                i += channels;
-                if (i >= SAMPLE_ARRAY_SIZE)
-                    i -= SAMPLE_ARRAY_SIZE;
-            }
+      h = INT_MIN;
+      for (i = 0; i < 1000; i += channels) {
+        int idx = (SAMPLE_ARRAY_SIZE + x - i) % SAMPLE_ARRAY_SIZE;
+        int a = s->sample_array[idx];
+        int b = s->sample_array[(idx + 4 * channels) % SAMPLE_ARRAY_SIZE];
+        int c = s->sample_array[(idx + 5 * channels) % SAMPLE_ARRAY_SIZE];
+        int d = s->sample_array[(idx + 9 * channels) % SAMPLE_ARRAY_SIZE];
+        int score = a - d;
+        if (h < score && (b ^ c) < 0) {
+          h = score;
+          i_start = idx;
+          }
         }
+      }
 
-        SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
-
-        for (ch = 1; ch < nb_display_channels; ch++) {
-            y = s->ytop + ch * h;
-            fill_rectangle(s->xleft, y, s->width, 1);
-        }
-    } else {
-        int err = 0;
-        if (realloc_texture(&s->vis_texture, SDL_PIXELFORMAT_ARGB8888, s->width, s->height, SDL_BLENDMODE_NONE, 1) < 0)
-            return;
-
-        if (s->xpos >= s->width)
-            s->xpos = 0;
-        nb_display_channels= FFMIN(nb_display_channels, 2);
-        if (rdft_bits != s->rdft_bits) {
-            const float rdft_scale = 1.0;
-            av_tx_uninit(&s->rdft);
-            av_freep(&s->real_data);
-            av_freep(&s->rdft_data);
-            s->rdft_bits = rdft_bits;
-            s->real_data = av_malloc_array(nb_freq, 4 *sizeof(*s->real_data));
-            s->rdft_data = av_malloc_array(nb_freq + 1, 2 *sizeof(*s->rdft_data));
-            err = av_tx_init(&s->rdft, &s->rdft_fn, AV_TX_FLOAT_RDFT,
-                             0, 1 << rdft_bits, &rdft_scale, 0);
-        }
-        if (err < 0 || !s->rdft_data) {
-            av_log(NULL, AV_LOG_ERROR, "Failed to allocate buffers for RDFT, switching to waves display\n");
-            s->show_mode = SHOW_MODE_WAVES;
-        } else {
-            float *data_in[2];
-            AVComplexFloat *data[2];
-            SDL_Rect rect = {.x = s->xpos, .y = 0, .w = 1, .h = s->height};
-            uint32_t *pixels;
-            int pitch;
-            for (ch = 0; ch < nb_display_channels; ch++) {
-                data_in[ch] = s->real_data + 2 * nb_freq * ch;
-                data[ch] = s->rdft_data + nb_freq * ch;
-                i = i_start + ch;
-                for (x = 0; x < 2 * nb_freq; x++) {
-                    double w = (x-nb_freq) * (1.0 / nb_freq);
-                    data_in[ch][x] = s->sample_array[i] * (1.0 - w * w);
-                    i += channels;
-                    if (i >= SAMPLE_ARRAY_SIZE)
-                        i -= SAMPLE_ARRAY_SIZE;
-                }
-                s->rdft_fn(s->rdft, data[ch], data_in[ch], sizeof(float));
-                data[ch][0].im = data[ch][nb_freq].re;
-                data[ch][nb_freq].re = 0;
-            }
-            /* Least efficient way to do this, we should of course
-             * directly access it but it is more than fast enough. */
-            if (!SDL_LockTexture(s->vis_texture, &rect, (void **)&pixels, &pitch)) {
-                pitch >>= 2;
-                pixels += pitch * s->height;
-                for (y = 0; y < s->height; y++) {
-                    double w = 1 / sqrt(nb_freq);
-                    int a = sqrt(w * sqrt(data[0][y].re * data[0][y].re + data[0][y].im * data[0][y].im));
-                    int b = (nb_display_channels == 2 ) ? sqrt(w * hypot(data[1][y].re, data[1][y].im))
-                                                        : a;
-                    a = FFMIN(a, 255);
-                    b = FFMIN(b, 255);
-                    pixels -= pitch;
-                    *pixels = (a << 16) + (b << 8) + ((a+b) >> 1);
-                }
-                SDL_UnlockTexture(s->vis_texture);
-            }
-            SDL_RenderCopy(renderer, s->vis_texture, NULL, NULL);
-        }
-        if (!s->paused)
-            s->xpos++;
+    s->last_i_start = i_start;
+    } 
+  else {
+    i_start = s->last_i_start;
     }
-}
 
+  if (s->show_mode == SHOW_MODE_WAVES) {
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+
+    /* total height for one channel */
+    h = s->height / nb_display_channels;
+    /* graph height / 2 */
+    h2 = (h * 9) / 20;
+   for (ch = 0; ch < nb_display_channels; ch++) {
+      i = i_start + ch;
+       y1 = s->ytop + ch * h + (h / 2); /* position of center line */
+      for (x = 0; x < s->width; x++) {
+        y = (s->sample_array[i] * h2) >> 15;
+        if (y < 0) {
+          y = -y;
+          ys = y1 - y;
+          } 
+        else {
+          ys = y1;
+          }
+        fill_rectangle(s->xleft + x, ys, 1, y);
+        i += channels;
+        if (i >= SAMPLE_ARRAY_SIZE)
+          i -= SAMPLE_ARRAY_SIZE;
+        }
+      }
+
+    SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
+
+    for (ch = 1; ch < nb_display_channels; ch++) {
+      y = s->ytop + ch * h;
+      fill_rectangle(s->xleft, y, s->width, 1);
+      }
+    } 
+  else {
+      int err = 0;
+      if (realloc_texture(&s->vis_texture, SDL_PIXELFORMAT_ARGB8888, s->width, s->height, SDL_BLENDMODE_NONE, 1) < 0)
+          return;
+
+      if (s->xpos >= s->width)
+          s->xpos = 0;
+      nb_display_channels= FFMIN(nb_display_channels, 2);
+      if (rdft_bits != s->rdft_bits) {
+          const float rdft_scale = 1.0;
+          av_tx_uninit(&s->rdft);
+          av_freep(&s->real_data);
+          av_freep(&s->rdft_data);
+          s->rdft_bits = rdft_bits;
+          s->real_data = av_malloc_array(nb_freq, 4 *sizeof(*s->real_data));
+          s->rdft_data = av_malloc_array(nb_freq + 1, 2 *sizeof(*s->rdft_data));
+          err = av_tx_init(&s->rdft, &s->rdft_fn, AV_TX_FLOAT_RDFT,
+                           0, 1 << rdft_bits, &rdft_scale, 0);
+      }
+      if (err < 0 || !s->rdft_data) {
+          av_log(NULL, AV_LOG_ERROR, "Failed to allocate buffers for RDFT, switching to waves display\n");
+          s->show_mode = SHOW_MODE_WAVES;
+      } else {
+          float *data_in[2];
+          AVComplexFloat *data[2];
+          SDL_Rect rect = {.x = s->xpos, .y = 0, .w = 1, .h = s->height};
+          uint32_t *pixels;
+          int pitch;
+          for (ch = 0; ch < nb_display_channels; ch++) {
+              data_in[ch] = s->real_data + 2 * nb_freq * ch;
+              data[ch] = s->rdft_data + nb_freq * ch;
+              i = i_start + ch;
+              for (x = 0; x < 2 * nb_freq; x++) {
+                  double w = (x-nb_freq) * (1.0 / nb_freq);
+                  data_in[ch][x] = s->sample_array[i] * (1.0 - w * w);
+                  i += channels;
+                  if (i >= SAMPLE_ARRAY_SIZE)
+                      i -= SAMPLE_ARRAY_SIZE;
+              }
+              s->rdft_fn(s->rdft, data[ch], data_in[ch], sizeof(float));
+              data[ch][0].im = data[ch][nb_freq].re;
+              data[ch][nb_freq].re = 0;
+          }
+          /* Least efficient way to do this, we should of course
+           * directly access it but it is more than fast enough. */
+          if (!SDL_LockTexture(s->vis_texture, &rect, (void **)&pixels, &pitch)) {
+              pitch >>= 2;
+              pixels += pitch * s->height;
+              for (y = 0; y < s->height; y++) {
+                  double w = 1 / sqrt(nb_freq);
+                  int a = sqrt(w * sqrt(data[0][y].re * data[0][y].re + data[0][y].im * data[0][y].im));
+                  int b = (nb_display_channels == 2 ) ? sqrt(w * hypot(data[1][y].re, data[1][y].im))
+                                                      : a;
+                  a = FFMIN(a, 255);
+                  b = FFMIN(b, 255);
+                  pixels -= pitch;
+                  *pixels = (a << 16) + (b << 8) + ((a+b) >> 1);
+           }
+        SDL_UnlockTexture(s->vis_texture);
+        }
+      SDL_RenderCopy(renderer, s->vis_texture, NULL, NULL);
+      }
+
+    if (!s->paused)
+      s->xpos++;
+    }
+  }
+//}}}
+//{{{
 static void stream_component_close(VideoState *is, int stream_index)
 {
     AVFormatContext *ic = is->ic;
@@ -1379,7 +1397,8 @@ static void stream_component_close(VideoState *is, int stream_index)
         break;
     }
 }
-
+//}}}
+//{{{
 static void stream_close(VideoState *is)
 {
     /* XXX: use a special url_shutdown call to abort parse cleanly */
@@ -3390,11 +3409,11 @@ static void stream_cycle_channel (VideoState* is, int codec_type) {
   if (codec_type == AVMEDIA_TYPE_VIDEO) {
     start_index = is->last_video_stream;
     old_index = is->video_stream;
-    } 
+    }
   else if (codec_type == AVMEDIA_TYPE_AUDIO) {
     start_index = is->last_audio_stream;
     old_index = is->audio_stream;
-    } 
+    }
   else {
     start_index = is->last_subtitle_stream;
     old_index = is->subtitle_stream;
