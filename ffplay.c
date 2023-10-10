@@ -19,14 +19,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 //}}}
-//{{{
-/**
- * @file
- * simple media player based on the FFmpeg libraries
- */
-
+//{{{  includes
 #include "config.h"
 #include "config_components.h"
+
 #include <inttypes.h>
 #include <math.h>
 #include <limits.h>
@@ -51,7 +47,6 @@
 #include "libavutil/opt.h"
 #include "libavutil/tx.h"
 #include "libswresample/swresample.h"
-
 #include "libavfilter/avfilter.h"
 #include "libavfilter/buffersink.h"
 #include "libavfilter/buffersrc.h"
@@ -222,7 +217,7 @@ typedef struct Decoder {
   AVRational start_pts_tb;
   int64_t next_pts;
   AVRational next_pts_tb;
-  SDL_Thread *decoder_tid;
+  SDL_Thread* decoder_tid;
   } Decoder;
 //}}}
 //{{{
@@ -3051,7 +3046,7 @@ static int read_thread (void* arg) {
 
   const AVDictionaryEntry* t;
   if ((t = av_dict_get (format_opts, "", NULL, AV_DICT_IGNORE_SUFFIX))) {
-    av_log(NULL, AV_LOG_ERROR, "Option %s not found.\n", t->key);
+    av_log (NULL, AV_LOG_ERROR, "Option %s not found.\n", t->key);
     ret = AVERROR_OPTION_NOT_FOUND;
     goto fail;
     }
