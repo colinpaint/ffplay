@@ -13,6 +13,8 @@ elseif (CMAKE_HOST_SYSTEM_NAME STREQUAL Linux)
 endif()
 #
 
+add_subdirectory (SDL)
+
 project (ffplay VERSION 1.0.0)
   add_executable (${PROJECT_NAME} ffplay.c
                                   config.h config_components.h
