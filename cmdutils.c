@@ -63,7 +63,7 @@ AVDictionary *format_opts, *codec_opts;
 int hide_banner = 0;
 
 //{{{
-void uninit_opts(void)
+void uninit_opts()
 {
     av_dict_free(&swr_opts);
     av_dict_free(&sws_dict);
@@ -72,13 +72,13 @@ void uninit_opts(void)
 }
 //}}}
 //{{{
-void log_callback_help(void *ptr, int level, const char *fmt, va_list vl)
+void log_callback_help (void *ptr, int level, const char *fmt, va_list vl)
 {
     vfprintf(stdout, fmt, vl);
 }
 //}}}
 //{{{
-void init_dynload(void)
+void init_dynload()
 {
 #if HAVE_SETDLLDIRECTORY && defined(_WIN32)
     /* Calling SetDllDirectory with the empty string (but not NULL) removes the
@@ -89,7 +89,7 @@ void init_dynload(void)
 
 //}}}
 //{{{
-int parse_number(const char *context, const char *numstr, int type,
+int parse_number (const char *context, const char *numstr, int type,
                  double min, double max, double *dst)
 {
     char *tail;
@@ -114,7 +114,7 @@ int parse_number(const char *context, const char *numstr, int type,
 //}}}
 
 //{{{
-void show_help_options(const OptionDef *options, const char *msg, int req_flags,
+void show_help_options (const OptionDef *options, const char *msg, int req_flags,
                        int rej_flags, int alt_flags)
 {
     const OptionDef *po;
@@ -144,7 +144,7 @@ void show_help_options(const OptionDef *options, const char *msg, int req_flags,
 }
 //}}}
 //{{{
-void show_help_children(const AVClass *class, int flags)
+void show_help_children (const AVClass *class, int flags)
 {
     void *iter = NULL;
     const AVClass *child;
@@ -158,7 +158,7 @@ void show_help_children(const AVClass *class, int flags)
 }
 //}}}
 //{{{
-static const OptionDef *find_option(const OptionDef *po, const char *name)
+static const OptionDef *find_option (const OptionDef *po, const char *name)
 {
     while (po->name) {
         const char *end;
@@ -233,15 +233,15 @@ static const OptionDef *find_option(const OptionDef *po, const char *name)
   //}}}
 #else
   //{{{
-  static inline void prepare_app_arguments(int *argc_ptr, char ***argv_ptr)
+  static inline void prepare_app_arguments (int *argc_ptr, char ***argv_ptr)
   {
       /* nothing to do */
   }
   //}}}
-#endif 
+#endif
 
 //{{{
-static int write_option(void *optctx, const OptionDef *po, const char *opt,
+static int write_option (void *optctx, const OptionDef *po, const char *opt,
                         const char *arg)
 {
     /* new-style options contain an offset into optctx, old-style address of
@@ -323,7 +323,7 @@ static int write_option(void *optctx, const OptionDef *po, const char *opt,
 }
 //}}}
 //{{{
-int parse_option(void *optctx, const char *opt, const char *arg,
+int parse_option (void *optctx, const char *opt, const char *arg,
                  const OptionDef *options)
 {
     static const OptionDef opt_avoptions = {
@@ -363,7 +363,7 @@ int parse_option(void *optctx, const char *opt, const char *arg,
 }
 //}}}
 //{{{
-int parse_options(void *optctx, int argc, char **argv, const OptionDef *options,
+int parse_options (void *optctx, int argc, char **argv, const OptionDef *options,
                   int (*parse_arg_function)(void *, const char*))
 {
     const char *opt;
@@ -400,7 +400,7 @@ int parse_options(void *optctx, int argc, char **argv, const OptionDef *options,
 }
 //}}}
 //{{{
-int parse_optgroup(void *optctx, OptionGroup *g)
+int parse_optgroup (void *optctx, OptionGroup *g)
 {
     int i, ret;
 
@@ -434,7 +434,7 @@ int parse_optgroup(void *optctx, OptionGroup *g)
 }
 //}}}
 //{{{
-int locate_option(int argc, char **argv, const OptionDef *options,
+int locate_option (int argc, char **argv, const OptionDef *options,
                   const char *optname)
 {
     const OptionDef *po;
@@ -462,7 +462,7 @@ int locate_option(int argc, char **argv, const OptionDef *options,
 //}}}
 
 //{{{
-static void dump_argument(FILE *report_file, const char *a)
+static void dump_argument (FILE *report_file, const char *a)
 {
     const unsigned char *p;
 
@@ -487,7 +487,7 @@ static void dump_argument(FILE *report_file, const char *a)
 }
 //}}}
 //{{{
-static void check_options(const OptionDef *po)
+static void check_options (const OptionDef *po)
 {
     while (po->name) {
         if (po->flags & OPT_PERFILE)
@@ -497,7 +497,7 @@ static void check_options(const OptionDef *po)
 }
 //}}}
 //{{{
-void parse_loglevel(int argc, char **argv, const OptionDef *options)
+void parse_loglevel (int argc, char **argv, const OptionDef *options)
 {
     int idx = locate_option(argc, argv, options, "loglevel");
     char *env;
@@ -530,7 +530,7 @@ void parse_loglevel(int argc, char **argv, const OptionDef *options)
 }
 //}}}
 //{{{
-static const AVOption *opt_find(void *obj, const char *name, const char *unit,
+static const AVOption *opt_find (void *obj, const char *name, const char *unit,
                             int opt_flags, int search_flags)
 {
     const AVOption *o = av_opt_find(obj, name, unit, opt_flags, search_flags);
@@ -542,7 +542,7 @@ static const AVOption *opt_find(void *obj, const char *name, const char *unit,
 
 #define FLAGS (o->type == AV_OPT_TYPE_FLAGS && (arg[0]=='-' || arg[0]=='+')) ? AV_DICT_APPEND : 0
 //{{{
-int opt_default(void *optctx, const char *opt, const char *arg)
+int opt_default (void *optctx, const char *opt, const char *arg)
 {
     const AVOption *o;
     int consumed = 0;
@@ -615,7 +615,7 @@ int opt_default(void *optctx, const char *opt, const char *arg)
  *
  * @return index of the group definition that matched or -1 if none
  */
-static int match_group_separator(const OptionGroupDef *groups, int nb_groups,
+static int match_group_separator (const OptionGroupDef *groups, int nb_groups,
                                  const char *opt)
 {
     int i;
@@ -636,7 +636,7 @@ static int match_group_separator(const OptionGroupDef *groups, int nb_groups,
  * @param group_idx which group definition should this group belong to
  * @param arg argument of the group delimiting option
  */
-static int finish_group(OptionParseContext *octx, int group_idx,
+static int finish_group (OptionParseContext *octx, int group_idx,
                         const char *arg)
 {
     OptionGroupList *l = &octx->groups[group_idx];
@@ -671,7 +671,7 @@ static int finish_group(OptionParseContext *octx, int group_idx,
 /*
  * Add an option instance to currently parsed group.
  */
-static int add_opt(OptionParseContext *octx, const OptionDef *opt,
+static int add_opt (OptionParseContext *octx, const OptionDef *opt,
                    const char *key, const char *val)
 {
     int global = !(opt->flags & (OPT_PERFILE | OPT_SPEC | OPT_OFFSET));
@@ -713,7 +713,7 @@ static int init_parse_context(OptionParseContext *octx,
 //}}}
 
 //{{{
-void uninit_parse_context(OptionParseContext *octx)
+void uninit_parse_context (OptionParseContext *octx)
 {
     int i, j;
 
@@ -739,7 +739,7 @@ void uninit_parse_context(OptionParseContext *octx)
 }
 //}}}
 //{{{
-int split_commandline(OptionParseContext *octx, int argc, char *argv[],
+int split_commandline (OptionParseContext *octx, int argc, char *argv[],
                       const OptionDef *options,
                       const OptionGroupDef *groups, int nb_groups)
 {
@@ -863,13 +863,13 @@ do {                                                                           \
 //}}}
 
 //{{{
-void print_error(const char *filename, int err)
+void print_error (const char *filename, int err)
 {
     av_log(NULL, AV_LOG_ERROR, "%s: %s\n", filename, av_err2str(err));
 }
 //}}}
 //{{{
-int read_yesno(void)
+int read_yesno()
 {
     int c = getchar();
     int yesno = (av_toupper(c) == 'Y');
@@ -882,7 +882,7 @@ int read_yesno(void)
 //}}}
 
 //{{{
-FILE *get_preset_file(char *filename, size_t filename_size,
+FILE *get_preset_file (char *filename, size_t filename_size,
                       const char *preset_name, int is_path,
                       const char *codec_name)
 {
@@ -955,7 +955,7 @@ FILE *get_preset_file(char *filename, size_t filename_size,
 }
 //}}}
 //{{{
-int check_stream_specifier(AVFormatContext *s, AVStream *st, const char *spec)
+int check_stream_specifier (AVFormatContext *s, AVStream *st, const char *spec)
 {
     int ret = avformat_match_stream_specifier(s, st, spec);
     if (ret < 0)
@@ -964,7 +964,7 @@ int check_stream_specifier(AVFormatContext *s, AVStream *st, const char *spec)
 }
 //}}}
 //{{{
-int filter_codec_opts(const AVDictionary *opts, enum AVCodecID codec_id,
+int filter_codec_opts (const AVDictionary *opts, enum AVCodecID codec_id,
                       AVFormatContext *s, AVStream *st, const AVCodec *codec,
                       AVDictionary **dst)
 {
@@ -1030,7 +1030,7 @@ int filter_codec_opts(const AVDictionary *opts, enum AVCodecID codec_id,
 }
 //}}}
 //{{{
-int setup_find_stream_info_opts(AVFormatContext *s,
+int setup_find_stream_info_opts (AVFormatContext *s,
                                 AVDictionary *codec_opts,
                                 AVDictionary ***dst)
 {
@@ -1063,7 +1063,7 @@ fail:
 //}}}
 
 //{{{
-int grow_array(void **array, int elem_size, int *size, int new_size)
+int grow_array (void **array, int elem_size, int *size, int new_size)
 {
     if (new_size >= INT_MAX / elem_size) {
         av_log(NULL, AV_LOG_ERROR, "Array too big.\n");
@@ -1082,7 +1082,7 @@ int grow_array(void **array, int elem_size, int *size, int new_size)
 }
 //}}}
 //{{{
-void *allocate_array_elem(void *ptr, size_t elem_size, int *nb_elems)
+void *allocate_array_elem (void *ptr, size_t elem_size, int *nb_elems)
 {
     void *new_elem;
 
@@ -1094,7 +1094,7 @@ void *allocate_array_elem(void *ptr, size_t elem_size, int *nb_elems)
 //}}}
 
 //{{{
-double get_rotation(const int32_t *displaymatrix)
+double get_rotation (const int32_t *displaymatrix)
 {
     double theta = 0;
     if (displaymatrix)
