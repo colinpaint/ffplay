@@ -1,3 +1,4 @@
+//{{{
 /*
  * Various utilities for command line tools
  * Copyright (c) 2000-2003 Fabrice Bellard
@@ -18,7 +19,8 @@
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
-
+//}}}
+//{{{  includes
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -54,13 +56,13 @@
 #include <windows.h>
 #include "compat/w32dlfcn.h"
 #endif
-
+//}}}
 AVDictionary *sws_dict;
 AVDictionary *swr_opts;
 AVDictionary *format_opts, *codec_opts;
-
 int hide_banner = 0;
 
+//{{{
 void uninit_opts(void)
 {
     av_dict_free(&swr_opts);
@@ -68,12 +70,14 @@ void uninit_opts(void)
     av_dict_free(&format_opts);
     av_dict_free(&codec_opts);
 }
-
+//}}}
+//{{{
 void log_callback_help(void *ptr, int level, const char *fmt, va_list vl)
 {
     vfprintf(stdout, fmt, vl);
 }
-
+//}}}
+//{{{
 void init_dynload(void)
 {
 #if HAVE_SETDLLDIRECTORY && defined(_WIN32)
@@ -83,6 +87,8 @@ void init_dynload(void)
 #endif
 }
 
+//}}}
+//{{{
 int parse_number(const char *context, const char *numstr, int type,
                  double min, double max, double *dst)
 {
@@ -105,7 +111,9 @@ int parse_number(const char *context, const char *numstr, int type,
     av_log(NULL, AV_LOG_FATAL, error, context, numstr, min, max);
     return AVERROR(EINVAL);
 }
+//}}}
 
+//{{{
 void show_help_options(const OptionDef *options, const char *msg, int req_flags,
                        int rej_flags, int alt_flags)
 {
@@ -134,7 +142,8 @@ void show_help_options(const OptionDef *options, const char *msg, int req_flags,
     }
     printf("\n");
 }
-
+//}}}
+//{{{
 void show_help_children(const AVClass *class, int flags)
 {
     void *iter = NULL;
@@ -147,7 +156,8 @@ void show_help_children(const AVClass *class, int flags)
     while (child = av_opt_child_class_iterate(class, &iter))
         show_help_children(child, flags);
 }
-
+//}}}
+//{{{
 static const OptionDef *find_option(const OptionDef *po, const char *name)
 {
     while (po->name) {
@@ -158,71 +168,79 @@ static const OptionDef *find_option(const OptionDef *po, const char *name)
     }
     return po;
 }
+//}}}
 
 /* _WIN32 means using the windows libc - cygwin doesn't define that
  * by default. HAVE_COMMANDLINETOARGVW is true on cygwin, while
  * it doesn't provide the actual command line via GetCommandLineW(). */
 #if HAVE_COMMANDLINETOARGVW && defined(_WIN32)
-#include <shellapi.h>
-/* Will be leaked on exit */
-static char** win32_argv_utf8 = NULL;
-static int win32_argc = 0;
+  //{{{
+  #include <shellapi.h>
+  /* Will be leaked on exit */
+  static char** win32_argv_utf8 = NULL;
+  static int win32_argc = 0;
 
-/**
- * Prepare command line arguments for executable.
- * For Windows - perform wide-char to UTF-8 conversion.
- * Input arguments should be main() function arguments.
- * @param argc_ptr Arguments number (including executable)
- * @param argv_ptr Arguments list.
- */
-static void prepare_app_arguments(int *argc_ptr, char ***argv_ptr)
-{
-    char *argstr_flat;
-    wchar_t **argv_w;
-    int i, buffsize = 0, offset = 0;
+  //{{{
+  /**
+   * Prepare command line arguments for executable.
+   * For Windows - perform wide-char to UTF-8 conversion.
+   * Input arguments should be main() function arguments.
+   * @param argc_ptr Arguments number (including executable)
+   * @param argv_ptr Arguments list.
+   */
+  static void prepare_app_arguments(int *argc_ptr, char ***argv_ptr)
+  {
+      char *argstr_flat;
+      wchar_t **argv_w;
+      int i, buffsize = 0, offset = 0;
 
-    if (win32_argv_utf8) {
-        *argc_ptr = win32_argc;
-        *argv_ptr = win32_argv_utf8;
-        return;
-    }
+      if (win32_argv_utf8) {
+          *argc_ptr = win32_argc;
+          *argv_ptr = win32_argv_utf8;
+          return;
+      }
 
-    win32_argc = 0;
-    argv_w = CommandLineToArgvW(GetCommandLineW(), &win32_argc);
-    if (win32_argc <= 0 || !argv_w)
-        return;
+      win32_argc = 0;
+      argv_w = CommandLineToArgvW(GetCommandLineW(), &win32_argc);
+      if (win32_argc <= 0 || !argv_w)
+          return;
 
-    /* determine the UTF-8 buffer size (including NULL-termination symbols) */
-    for (i = 0; i < win32_argc; i++)
-        buffsize += WideCharToMultiByte(CP_UTF8, 0, argv_w[i], -1,
-                                        NULL, 0, NULL, NULL);
+      /* determine the UTF-8 buffer size (including NULL-termination symbols) */
+      for (i = 0; i < win32_argc; i++)
+          buffsize += WideCharToMultiByte(CP_UTF8, 0, argv_w[i], -1,
+                                          NULL, 0, NULL, NULL);
 
-    win32_argv_utf8 = av_mallocz(sizeof(char *) * (win32_argc + 1) + buffsize);
-    argstr_flat     = (char *)win32_argv_utf8 + sizeof(char *) * (win32_argc + 1);
-    if (!win32_argv_utf8) {
-        LocalFree(argv_w);
-        return;
-    }
+      win32_argv_utf8 = av_mallocz(sizeof(char *) * (win32_argc + 1) + buffsize);
+      argstr_flat     = (char *)win32_argv_utf8 + sizeof(char *) * (win32_argc + 1);
+      if (!win32_argv_utf8) {
+          LocalFree(argv_w);
+          return;
+      }
 
-    for (i = 0; i < win32_argc; i++) {
-        win32_argv_utf8[i] = &argstr_flat[offset];
-        offset += WideCharToMultiByte(CP_UTF8, 0, argv_w[i], -1,
-                                      &argstr_flat[offset],
-                                      buffsize - offset, NULL, NULL);
-    }
-    win32_argv_utf8[i] = NULL;
-    LocalFree(argv_w);
+      for (i = 0; i < win32_argc; i++) {
+          win32_argv_utf8[i] = &argstr_flat[offset];
+          offset += WideCharToMultiByte(CP_UTF8, 0, argv_w[i], -1,
+                                        &argstr_flat[offset],
+                                        buffsize - offset, NULL, NULL);
+      }
+      win32_argv_utf8[i] = NULL;
+      LocalFree(argv_w);
 
-    *argc_ptr = win32_argc;
-    *argv_ptr = win32_argv_utf8;
-}
+      *argc_ptr = win32_argc;
+      *argv_ptr = win32_argv_utf8;
+  }
+  //}}}
+  //}}}
 #else
-static inline void prepare_app_arguments(int *argc_ptr, char ***argv_ptr)
-{
-    /* nothing to do */
-}
-#endif /* HAVE_COMMANDLINETOARGVW */
+  //{{{
+  static inline void prepare_app_arguments(int *argc_ptr, char ***argv_ptr)
+  {
+      /* nothing to do */
+  }
+  //}}}
+#endif 
 
+//{{{
 static int write_option(void *optctx, const OptionDef *po, const char *opt,
                         const char *arg)
 {
@@ -303,7 +321,8 @@ static int write_option(void *optctx, const OptionDef *po, const char *opt,
 
     return 0;
 }
-
+//}}}
+//{{{
 int parse_option(void *optctx, const char *opt, const char *arg,
                  const OptionDef *options)
 {
@@ -342,7 +361,8 @@ int parse_option(void *optctx, const char *opt, const char *arg,
 
     return !!(po->flags & HAS_ARG);
 }
-
+//}}}
+//{{{
 int parse_options(void *optctx, int argc, char **argv, const OptionDef *options,
                   int (*parse_arg_function)(void *, const char*))
 {
@@ -378,7 +398,8 @@ int parse_options(void *optctx, int argc, char **argv, const OptionDef *options,
 
     return 0;
 }
-
+//}}}
+//{{{
 int parse_optgroup(void *optctx, OptionGroup *g)
 {
     int i, ret;
@@ -411,7 +432,8 @@ int parse_optgroup(void *optctx, OptionGroup *g)
 
     return 0;
 }
-
+//}}}
+//{{{
 int locate_option(int argc, char **argv, const OptionDef *options,
                   const char *optname)
 {
@@ -437,7 +459,9 @@ int locate_option(int argc, char **argv, const OptionDef *options,
     }
     return 0;
 }
+//}}}
 
+//{{{
 static void dump_argument(FILE *report_file, const char *a)
 {
     const unsigned char *p;
@@ -461,7 +485,8 @@ static void dump_argument(FILE *report_file, const char *a)
     }
     fputc('"', report_file);
 }
-
+//}}}
+//{{{
 static void check_options(const OptionDef *po)
 {
     while (po->name) {
@@ -470,7 +495,8 @@ static void check_options(const OptionDef *po)
         po++;
     }
 }
-
+//}}}
+//{{{
 void parse_loglevel(int argc, char **argv, const OptionDef *options)
 {
     int idx = locate_option(argc, argv, options, "loglevel");
@@ -502,7 +528,8 @@ void parse_loglevel(int argc, char **argv, const OptionDef *options)
     if (idx)
         hide_banner = 1;
 }
-
+//}}}
+//{{{
 static const AVOption *opt_find(void *obj, const char *name, const char *unit,
                             int opt_flags, int search_flags)
 {
@@ -511,8 +538,10 @@ static const AVOption *opt_find(void *obj, const char *name, const char *unit,
         return NULL;
     return o;
 }
+//}}}
 
 #define FLAGS (o->type == AV_OPT_TYPE_FLAGS && (arg[0]=='-' || arg[0]=='+')) ? AV_DICT_APPEND : 0
+//{{{
 int opt_default(void *optctx, const char *opt, const char *arg)
 {
     const AVOption *o;
@@ -579,7 +608,8 @@ int opt_default(void *optctx, const char *opt, const char *arg)
         return 0;
     return AVERROR_OPTION_NOT_FOUND;
 }
-
+//}}}
+//{{{
 /*
  * Check whether given option is a group separator.
  *
@@ -598,7 +628,8 @@ static int match_group_separator(const OptionGroupDef *groups, int nb_groups,
 
     return -1;
 }
-
+//}}}
+//{{{
 /*
  * Finish parsing an option group.
  *
@@ -635,7 +666,8 @@ static int finish_group(OptionParseContext *octx, int group_idx,
 
     return ret;
 }
-
+//}}}
+//{{{
 /*
  * Add an option instance to currently parsed group.
  */
@@ -678,7 +710,9 @@ static int init_parse_context(OptionParseContext *octx,
 
     return 0;
 }
+//}}}
 
+//{{{
 void uninit_parse_context(OptionParseContext *octx)
 {
     int i, j;
@@ -703,7 +737,8 @@ void uninit_parse_context(OptionParseContext *octx)
 
     uninit_opts();
 }
-
+//}}}
+//{{{
 int split_commandline(OptionParseContext *octx, int argc, char *argv[],
                       const OptionDef *options,
                       const OptionGroupDef *groups, int nb_groups)
@@ -825,12 +860,15 @@ do {                                                                           \
 
     return 0;
 }
+//}}}
 
+//{{{
 void print_error(const char *filename, int err)
 {
     av_log(NULL, AV_LOG_ERROR, "%s: %s\n", filename, av_err2str(err));
 }
-
+//}}}
+//{{{
 int read_yesno(void)
 {
     int c = getchar();
@@ -841,7 +879,9 @@ int read_yesno(void)
 
     return yesno;
 }
+//}}}
 
+//{{{
 FILE *get_preset_file(char *filename, size_t filename_size,
                       const char *preset_name, int is_path,
                       const char *codec_name)
@@ -913,7 +953,8 @@ FILE *get_preset_file(char *filename, size_t filename_size,
     freeenv_utf8(env_home);
     return f;
 }
-
+//}}}
+//{{{
 int check_stream_specifier(AVFormatContext *s, AVStream *st, const char *spec)
 {
     int ret = avformat_match_stream_specifier(s, st, spec);
@@ -921,7 +962,8 @@ int check_stream_specifier(AVFormatContext *s, AVStream *st, const char *spec)
         av_log(s, AV_LOG_ERROR, "Invalid stream specifier: %s.\n", spec);
     return ret;
 }
-
+//}}}
+//{{{
 int filter_codec_opts(const AVDictionary *opts, enum AVCodecID codec_id,
                       AVFormatContext *s, AVStream *st, const AVCodec *codec,
                       AVDictionary **dst)
@@ -986,7 +1028,8 @@ int filter_codec_opts(const AVDictionary *opts, enum AVCodecID codec_id,
     *dst = ret;
     return 0;
 }
-
+//}}}
+//{{{
 int setup_find_stream_info_opts(AVFormatContext *s,
                                 AVDictionary *codec_opts,
                                 AVDictionary ***dst)
@@ -1017,7 +1060,9 @@ fail:
     av_freep(&opts);
     return ret;
 }
+//}}}
 
+//{{{
 int grow_array(void **array, int elem_size, int *size, int new_size)
 {
     if (new_size >= INT_MAX / elem_size) {
@@ -1035,7 +1080,8 @@ int grow_array(void **array, int elem_size, int *size, int new_size)
     }
     return 0;
 }
-
+//}}}
+//{{{
 void *allocate_array_elem(void *ptr, size_t elem_size, int *nb_elems)
 {
     void *new_elem;
@@ -1045,7 +1091,9 @@ void *allocate_array_elem(void *ptr, size_t elem_size, int *nb_elems)
         return NULL;
     return new_elem;
 }
+//}}}
 
+//{{{
 double get_rotation(const int32_t *displaymatrix)
 {
     double theta = 0;
@@ -1062,3 +1110,4 @@ double get_rotation(const int32_t *displaymatrix)
 
     return theta;
 }
+//}}}

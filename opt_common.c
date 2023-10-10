@@ -1,3 +1,4 @@
+//{{{
 /*
  * Option handlers shared between the tools.
  *
@@ -17,7 +18,8 @@
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
-
+//}}}
+//{{{
 #include "config.h"
 
 #include <stdio.h>
@@ -62,16 +64,18 @@
 
 #include "libpostproc/postprocess.h"
 #include "libpostproc/version.h"
-
+//}}}
+//{{{
 enum show_muxdemuxers {
     SHOW_DEFAULT,
     SHOW_DEMUXERS,
     SHOW_MUXERS,
 };
+//}}}
 
 static FILE *report_file;
 static int report_file_level = AV_LOG_DEBUG;
-
+//{{{
 int show_license(void *optctx, const char *opt, const char *arg)
 {
 #if CONFIG_NONFREE
@@ -145,6 +149,7 @@ int show_license(void *optctx, const char *opt, const char *arg)
 
     return 0;
 }
+//}}}
 
 static int warned_cfg = 0;
 
@@ -152,7 +157,7 @@ static int warned_cfg = 0;
 #define SHOW_VERSION  2
 #define SHOW_CONFIG   4
 #define SHOW_COPYRIGHT 8
-
+//{{{
 #define PRINT_LIB_INFO(libname, LIBNAME, flags, level)                  \
     if (CONFIG_##LIBNAME) {                                             \
         const char *indent = flags & INDENT? "  " : "";                 \
@@ -181,7 +186,9 @@ static int warned_cfg = 0;
             }                                                           \
         }                                                               \
     }                                                                   \
+//}}}
 
+//{{{
 static void print_all_libs_info(int flags, int level)
 {
     PRINT_LIB_INFO(avutil,     AVUTIL,     flags, level);
@@ -191,9 +198,10 @@ static void print_all_libs_info(int flags, int level)
     PRINT_LIB_INFO(avfilter,   AVFILTER,   flags, level);
     PRINT_LIB_INFO(swscale,    SWSCALE,    flags, level);
     PRINT_LIB_INFO(swresample, SWRESAMPLE, flags, level);
-    PRINT_LIB_INFO(postproc,   POSTPROC,   flags, level);
+    //PRINT_LIB_INFO(postproc,   POSTPROC,   flags, level);
 }
-
+//}}}
+//{{{
 static void print_program_info(int flags, int level)
 {
     const char *indent = flags & INDENT? "  " : "";
@@ -207,7 +215,8 @@ static void print_program_info(int flags, int level)
 
     av_log(NULL, level, "%sconfiguration: " FFMPEG_CONFIGURATION "\n", indent);
 }
-
+//}}}
+//{{{
 static void print_buildconf(int flags, int level)
 {
     const char *indent = flags & INDENT ? "  " : "";
@@ -233,7 +242,8 @@ static void print_buildconf(int flags, int level)
         splitconf = strtok(NULL, "~");
     }
 }
-
+//}}}
+//{{{
 void show_banner(int argc, char **argv, const OptionDef *options)
 {
     int idx = locate_option(argc, argv, options, "version");
@@ -244,7 +254,8 @@ void show_banner(int argc, char **argv, const OptionDef *options)
     print_all_libs_info(INDENT|SHOW_CONFIG,  AV_LOG_INFO);
     print_all_libs_info(INDENT|SHOW_VERSION, AV_LOG_INFO);
 }
-
+//}}}
+//{{{
 int show_version(void *optctx, const char *opt, const char *arg)
 {
     av_log_set_callback(log_callback_help);
@@ -253,7 +264,8 @@ int show_version(void *optctx, const char *opt, const char *arg)
 
     return 0;
 }
-
+//}}}
+//{{{
 int show_buildconf(void *optctx, const char *opt, const char *arg)
 {
     av_log_set_callback(log_callback_help);
@@ -261,7 +273,8 @@ int show_buildconf(void *optctx, const char *opt, const char *arg)
 
     return 0;
 }
-
+//}}}
+//{{{
 #define PRINT_CODEC_SUPPORTED(codec, field, type, list_name, term, get_name) \
     if (codec->field) {                                                      \
         const type *p = codec->field;                                        \
@@ -274,7 +287,8 @@ int show_buildconf(void *optctx, const char *opt, const char *arg)
         }                                                                    \
         printf("\n");                                                        \
     }                                                                        \
-
+//}}}
+//{{{
 static void print_codec(const AVCodec *c)
 {
     int encoder = av_codec_is_encoder(c);
@@ -379,7 +393,8 @@ static void print_codec(const AVCodec *c)
                            AV_OPT_FLAG_DECODING_PARAM);
     }
 }
-
+//}}}
+//{{{
 static const AVCodec *next_codec_for_id(enum AVCodecID id, void **iter,
                                         int encoder)
 {
@@ -391,7 +406,8 @@ static const AVCodec *next_codec_for_id(enum AVCodecID id, void **iter,
     }
     return NULL;
 }
-
+//}}}
+//{{{
 static void show_help_codec(const char *name, int encoder)
 {
     const AVCodecDescriptor *desc;
@@ -427,7 +443,8 @@ static void show_help_codec(const char *name, int encoder)
                name);
     }
 }
-
+//}}}
+//{{{
 static void show_help_demuxer(const char *name)
 {
     const AVInputFormat *fmt = av_find_input_format(name);
@@ -445,7 +462,8 @@ static void show_help_demuxer(const char *name)
     if (fmt->priv_class)
         show_help_children(fmt->priv_class, AV_OPT_FLAG_DECODING_PARAM);
 }
-
+//}}}
+//{{{
 static void show_help_protocol(const char *name)
 {
     const AVClass *proto_class;
@@ -463,7 +481,8 @@ static void show_help_protocol(const char *name)
 
     show_help_children(proto_class, AV_OPT_FLAG_DECODING_PARAM | AV_OPT_FLAG_ENCODING_PARAM);
 }
-
+//}}}
+//{{{
 static void show_help_muxer(const char *name)
 {
     const AVCodecDescriptor *desc;
@@ -496,8 +515,10 @@ static void show_help_muxer(const char *name)
     if (fmt->priv_class)
         show_help_children(fmt->priv_class, AV_OPT_FLAG_ENCODING_PARAM);
 }
+//}}}
 
 #if CONFIG_AVFILTER
+//{{{
 static void show_help_filter(const char *name)
 {
 #if CONFIG_AVFILTER
@@ -551,8 +572,10 @@ static void show_help_filter(const char *name)
            "can not to satisfy request\n");
 #endif
 }
+//}}}
 #endif
 
+//{{{
 static void show_help_bsf(const char *name)
 {
     const AVBitStreamFilter *bsf = av_bsf_get_by_name(name);
@@ -571,7 +594,8 @@ static void show_help_bsf(const char *name)
     if (bsf->priv_class)
         show_help_children(bsf->priv_class, AV_OPT_FLAG_BSF_PARAM);
 }
-
+//}}}
+//{{{
 int show_help(void *optctx, const char *opt, const char *arg)
 {
     char *topic, *par;
@@ -609,7 +633,8 @@ int show_help(void *optctx, const char *opt, const char *arg)
     av_freep(&topic);
     return 0;
 }
-
+//}}}
+//{{{
 static void print_codecs_for_id(enum AVCodecID id, int encoder)
 {
     void *iter = NULL;
@@ -622,7 +647,8 @@ static void print_codecs_for_id(enum AVCodecID id, int encoder)
 
     printf(")");
 }
-
+//}}}
+//{{{
 static int compare_codec_desc(const void *a, const void *b)
 {
     const AVCodecDescriptor * const *da = a;
@@ -631,7 +657,8 @@ static int compare_codec_desc(const void *a, const void *b)
     return (*da)->type != (*db)->type ? FFDIFFSIGN((*da)->type, (*db)->type) :
            strcmp((*da)->name, (*db)->name);
 }
-
+//}}}
+//{{{
 static int get_codecs_sorted(const AVCodecDescriptor ***rcodecs)
 {
     const AVCodecDescriptor *desc = NULL;
@@ -650,7 +677,8 @@ static int get_codecs_sorted(const AVCodecDescriptor ***rcodecs)
     *rcodecs = codecs;
     return nb_codecs;
 }
-
+//}}}
+//{{{
 static char get_media_type_char(enum AVMediaType type)
 {
     switch (type) {
@@ -662,7 +690,9 @@ static char get_media_type_char(enum AVMediaType type)
         default:                    return '?';
     }
 }
+//}}}
 
+//{{{
 int show_codecs(void *optctx, const char *opt, const char *arg)
 {
     const AVCodecDescriptor **codecs;
@@ -723,7 +753,8 @@ int show_codecs(void *optctx, const char *opt, const char *arg)
     av_free(codecs);
     return 0;
 }
-
+//}}}
+//{{{
 static void print_codecs(int encoder)
 {
     const AVCodecDescriptor **codecs;
@@ -763,19 +794,23 @@ static void print_codecs(int encoder)
     }
     av_free(codecs);
 }
+//}}}
 
+//{{{
 int show_decoders(void *optctx, const char *opt, const char *arg)
 {
     print_codecs(0);
     return 0;
 }
-
+//}}}
+//{{{
 int show_encoders(void *optctx, const char *opt, const char *arg)
 {
     print_codecs(1);
     return 0;
 }
-
+//}}}
+//{{{
 int show_bsfs(void *optctx, const char *opt, const char *arg)
 {
     const AVBitStreamFilter *bsf = NULL;
@@ -787,7 +822,8 @@ int show_bsfs(void *optctx, const char *opt, const char *arg)
     printf("\n");
     return 0;
 }
-
+//}}}
+//{{{
 int show_filters(void *optctx, const char *opt, const char *arg)
 {
 #if CONFIG_AVFILTER
@@ -836,14 +872,17 @@ int show_filters(void *optctx, const char *opt, const char *arg)
 #endif
     return 0;
 }
+//}}}
 
+//{{{
 static int is_device(const AVClass *avclass)
 {
     if (!avclass)
         return 0;
     return AV_IS_INPUT_DEVICE(avclass->category) || AV_IS_OUTPUT_DEVICE(avclass->category);
 }
-
+//}}}
+//{{{
 static int show_formats_devices(void *optctx, const char *opt, const char *arg, int device_only, int muxdemuxers)
 {
     void *ifmt_opaque = NULL;
@@ -906,27 +945,33 @@ static int show_formats_devices(void *optctx, const char *opt, const char *arg, 
     }
     return 0;
 }
+//}}}
 
+//{{{
 int show_formats(void *optctx, const char *opt, const char *arg)
 {
     return show_formats_devices(optctx, opt, arg, 0, SHOW_DEFAULT);
 }
-
+//}}}
+//{{{
 int show_muxers(void *optctx, const char *opt, const char *arg)
 {
     return show_formats_devices(optctx, opt, arg, 0, SHOW_MUXERS);
 }
-
+//}}}
+//{{{
 int show_demuxers(void *optctx, const char *opt, const char *arg)
 {
     return show_formats_devices(optctx, opt, arg, 0, SHOW_DEMUXERS);
 }
-
+//}}}
+//{{{
 int show_devices(void *optctx, const char *opt, const char *arg)
 {
     return show_formats_devices(optctx, opt, arg, 1, SHOW_DEFAULT);
 }
-
+//}}}
+//{{{
 int show_protocols(void *optctx, const char *opt, const char *arg)
 {
     void *opaque = NULL;
@@ -941,7 +986,8 @@ int show_protocols(void *optctx, const char *opt, const char *arg)
         printf("  %s\n", name);
     return 0;
 }
-
+//}}}
+//{{{
 int show_colors(void *optctx, const char *opt, const char *arg)
 {
     const char *name;
@@ -955,7 +1001,8 @@ int show_colors(void *optctx, const char *opt, const char *arg)
 
     return 0;
 }
-
+//}}}
+//{{{
 int show_pix_fmts(void *optctx, const char *opt, const char *arg)
 {
     const AVPixFmtDescriptor *pix_desc = NULL;
@@ -993,7 +1040,8 @@ int show_pix_fmts(void *optctx, const char *opt, const char *arg)
     }
     return 0;
 }
-
+//}}}
+//{{{
 int show_layouts(void *optctx, const char *opt, const char *arg)
 {
     const AVChannelLayout *ch_layout;
@@ -1026,7 +1074,8 @@ int show_layouts(void *optctx, const char *opt, const char *arg)
     }
     return 0;
 }
-
+//}}}
+//{{{
 int show_sample_fmts(void *optctx, const char *opt, const char *arg)
 {
     int i;
@@ -1035,7 +1084,8 @@ int show_sample_fmts(void *optctx, const char *opt, const char *arg)
         printf("%s\n", av_get_sample_fmt_string(fmt_str, sizeof(fmt_str), i));
     return 0;
 }
-
+//}}}
+//{{{
 int show_dispositions(void *optctx, const char *opt, const char *arg)
 {
     for (int i = 0; i < 32; i++) {
@@ -1045,7 +1095,8 @@ int show_dispositions(void *optctx, const char *opt, const char *arg)
     }
     return 0;
 }
-
+//}}}
+//{{{
 int opt_cpuflags(void *optctx, const char *opt, const char *arg)
 {
     int ret;
@@ -1057,7 +1108,8 @@ int opt_cpuflags(void *optctx, const char *opt, const char *arg)
     av_force_cpu_flags(flags);
     return 0;
 }
-
+//}}}
+//{{{
 int opt_cpucount(void *optctx, const char *opt, const char *arg)
 {
     int ret;
@@ -1083,7 +1135,8 @@ int opt_cpucount(void *optctx, const char *opt, const char *arg)
 
     return ret;
 }
-
+//}}}
+//{{{
 static void expand_filename_template(AVBPrint *bp, const char *template,
                                      struct tm *tm)
 {
@@ -1111,7 +1164,8 @@ static void expand_filename_template(AVBPrint *bp, const char *template,
         }
     }
 }
-
+//}}}
+//{{{
 static void log_callback_report(void *ptr, int level, const char *fmt, va_list vl)
 {
     va_list vl2;
@@ -1127,7 +1181,9 @@ static void log_callback_report(void *ptr, int level, const char *fmt, va_list v
         fflush(report_file);
     }
 }
+//}}}
 
+//{{{
 int init_report(const char *env, FILE **file)
 {
     char *filename_template = NULL;
@@ -1212,12 +1268,14 @@ int init_report(const char *env, FILE **file)
 
     return 0;
 }
-
+//}}}
+//{{{
 int opt_report(void *optctx, const char *opt, const char *arg)
 {
     return init_report(NULL, NULL);
 }
-
+//}}}
+//{{{
 int opt_max_alloc(void *optctx, const char *opt, const char *arg)
 {
     char *tail;
@@ -1231,7 +1289,8 @@ int opt_max_alloc(void *optctx, const char *opt, const char *arg)
     av_max_alloc(max);
     return 0;
 }
-
+//}}}
+//{{{
 int opt_loglevel(void *optctx, const char *opt, const char *arg)
 {
     const struct { const char *name; int level; } log_levels[] = {
@@ -1308,8 +1367,10 @@ end:
     av_log_set_level(level);
     return 0;
 }
+//}}}
 
 #if CONFIG_AVDEVICE
+//{{{
 static void print_device_list(const AVDeviceInfoList *device_list)
 {
     // print devices
@@ -1330,7 +1391,8 @@ static void print_device_list(const AVDeviceInfoList *device_list)
         printf(")\n");
     }
 }
-
+//}}}
+//{{{
 static int print_device_sources(const AVInputFormat *fmt, AVDictionary *opts)
 {
     int ret;
@@ -1351,7 +1413,8 @@ static int print_device_sources(const AVInputFormat *fmt, AVDictionary *opts)
     avdevice_free_list_devices(&device_list);
     return ret;
 }
-
+//}}}
+//{{{
 static int print_device_sinks(const AVOutputFormat *fmt, AVDictionary *opts)
 {
     int ret;
@@ -1372,7 +1435,8 @@ static int print_device_sinks(const AVOutputFormat *fmt, AVDictionary *opts)
     avdevice_free_list_devices(&device_list);
     return ret;
 }
-
+//}}}
+//{{{
 static int show_sinks_sources_parse_arg(const char *arg, char **dev, AVDictionary **opts)
 {
     int ret;
@@ -1394,7 +1458,8 @@ static int show_sinks_sources_parse_arg(const char *arg, char **dev, AVDictionar
                 "You can pass devicename[,opt1=val1[,opt2=val2...]] as an argument.\n\n");
     return 0;
 }
-
+//}}}
+//{{{
 int show_sources(void *optctx, const char *opt, const char *arg)
 {
     const AVInputFormat *fmt = NULL;
@@ -1432,7 +1497,8 @@ int show_sources(void *optctx, const char *opt, const char *arg)
     av_log_set_level(error_level);
     return ret;
 }
-
+//}}}
+//{{{
 int show_sinks(void *optctx, const char *opt, const char *arg)
 {
     const AVOutputFormat *fmt = NULL;
@@ -1468,4 +1534,5 @@ int show_sinks(void *optctx, const char *opt, const char *arg)
     av_log_set_level(error_level);
     return ret;
 }
+//}}}
 #endif /* CONFIG_AVDEVICE */
