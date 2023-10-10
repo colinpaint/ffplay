@@ -13,25 +13,25 @@ elseif (CMAKE_HOST_SYSTEM_NAME STREQUAL Linux)
 endif()
 #
 
-
 project (ffplay VERSION 1.0.0)
+  add_executable (${PROJECT_NAME} ffplay.c
+                                  config.h config_components.h
+                                  opt_common.h opt_common.c
+                                  cmdutils.h cmdutils.c
+                                  )
+
   if (CMAKE_HOST_SYSTEM_NAME STREQUAL Windows)
-    add_executable (${PROJECT_NAME} captureAudio/capture.cpp)
+    target_include_directories (${PROJECT_NAME} PUBLIC ../include/ffmpeg)
+    target_link_directories (${PROJECT_NAME} PUBLIC ../lib/windows64)
+    target_link_libraries (${PROJECT_NAME} PUBLIC avdevice avfilter avformat avcodec avutil
+                                                  swresample swscale)
 
-    if (CMAKE_HOST_SYSTEM_NAME STREQUAL Windows)
-      target_include_directories (${PROJECT_NAME} PUBLIC ../include/ffmpeg)
-      target_link_directories (${PROJECT_NAME} PUBLIC ../lib/windows64)
-      target_link_libraries (${PROJECT_NAME} PUBLIC avdevice avfilter avformat avcodec avutil
-                                                    swresample swscale)
+  else()
+    find_package (PkgConfig REQUIRED)
+    pkg_check_modules (FFMPEG REQUIRED IMPORTED_TARGET
+                       libavdevice libavfilter libavformat libavcodec libavutil
+                       libswresample libswscale)
 
-    else()
-      find_package (PkgConfig REQUIRED)
-      pkg_check_modules (FFMPEG REQUIRED IMPORTED_TARGET
-                         libavdevice libavfilter libavformat libavcodec libavutil
-                         libswresample libswscale)
-
-      target_include_directories (${PROJECT_NAME} PUBLIC common PkgConfig::FFMPEG)
-      target_link_libraries (${PROJECT_NAME} PUBLIC common PkgConfig::FFMPEG)
-
-    endif()
+    target_include_directories (${PROJECT_NAME} PUBLIC common PkgConfig::FFMPEG)
+    target_link_libraries (${PROJECT_NAME} PUBLIC common PkgConfig::FFMPEG)
   endif()
