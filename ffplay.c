@@ -2428,20 +2428,18 @@ the_end:
 //{{{
 static int subtitle_thread (void* arg) {
 
-  VideoState *is = arg;
-  Frame *sp;
-  int got_subtitle;
-  double pts;
+  VideoState* is = arg;
 
   for (;;) {
-    if (!(sp = frame_queue_peek_writable(&is->subpq)))
+    Frame* sp;
+    if (!(sp = frame_queue_peek_writable (&is->subpq)))
       return 0;
 
-    if ((got_subtitle = decoder_decode_frame(&is->subdec, NULL, &sp->sub)) < 0)
+    int got_subtitle;
+    if ((got_subtitle = decoder_decode_frame (&is->subdec, NULL, &sp->sub)) < 0)
       break;
 
-    pts = 0;
-
+    double pts = 0;
     if (got_subtitle && sp->sub.format == 0) {
       if (sp->sub.pts != AV_NOPTS_VALUE)
         pts = sp->sub.pts / (double)AV_TIME_BASE;
@@ -2452,11 +2450,10 @@ static int subtitle_thread (void* arg) {
       sp->uploaded = 0;
 
       /* now we can update the picture count */
-      frame_queue_push(&is->subpq);
+      frame_queue_push (&is->subpq);
       }
-    else if (got_subtitle) {
-      avsubtitle_free(&sp->sub);
-      }
+    else if (got_subtitle)
+      avsubtitle_free (&sp->sub);
     }
 
   return 0;
