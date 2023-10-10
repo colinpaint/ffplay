@@ -1,3 +1,4 @@
+//{{{
 /*
  * Various utilities for command line tools
  * copyright (c) 2003 Fabrice Bellard
@@ -18,10 +19,8 @@
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
-
-#ifndef FFTOOLS_CMDUTILS_H
-#define FFTOOLS_CMDUTILS_H
-
+//}}}
+#pragma once
 #include <stdint.h>
 
 #include "config.h"
@@ -418,5 +417,3 @@ void *allocate_array_elem(void *array, size_t elem_size, int *nb_elems);
     snprintf(name, sizeof(name), "%d", rate);
 
 double get_rotation(const int32_t *displaymatrix);
-
-#endif /* FFTOOLS_CMDUTILS_H */
