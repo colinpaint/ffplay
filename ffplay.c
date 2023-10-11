@@ -2132,7 +2132,7 @@ static void do_exit (VideoState* is) {
 
 // thread
 //{{{
-static int configure_filtergraph (AVFilterGraph* graph, const char* filtergraph,
+static int configureFilterGraph (AVFilterGraph* graph, const char* filtergraph,
                                   AVFilterContext *source_ctx, AVFilterContext *sink_ctx) {
 
   int ret, i;
@@ -2292,7 +2292,7 @@ static int decodeFrame (Decoder* decoder, AVFrame* frame, AVSubtitle *sub) {
 //}}}
 
 //{{{
-static int configure_video_filters (AVFilterGraph* graph, VideoState* is,
+static int configureVideoFilters (AVFilterGraph* graph, VideoState* is,
                                     const char* vfilters, AVFrame* frame) {
 
   enum AVPixelFormat pix_fmts[FF_ARRAY_ELEMS(sdl_texture_format_map)];
@@ -2406,7 +2406,7 @@ static int configure_video_filters (AVFilterGraph* graph, VideoState* is,
       }
     }
 
-  if ((ret = configure_filtergraph(graph, vfilters, filt_src, last_filter)) < 0)
+  if ((ret = configureFilterGraph (graph, vfilters, filt_src, last_filter)) < 0)
     goto fail;
 
   is->in_video_filter  = filt_src;
@@ -2505,7 +2505,7 @@ static int videoThread (void* arg) {
         //}}}
 
       graph->nb_threads = filter_nbthreads;
-      if ((ret = configure_video_filters (graph, is, vfilters_list ? vfilters_list[is->vfilter_idx] : NULL, frame)) < 0) {
+      if ((ret = configureVideoFilters (graph, is, vfilters_list ? vfilters_list[is->vfilter_idx] : NULL, frame)) < 0) {
         SDL_Event event;
         event.type = FF_QUIT_EVENT;
         event.user.data1 = is;
@@ -2568,7 +2568,7 @@ the_end:
 //}}}
 
 //{{{
-static int configure_audio_filters (VideoState* is, const char* afilters, int force_output_format) {
+static int configureAudioFilters (VideoState* is, const char* afilters, int force_output_format) {
 
   static const enum AVSampleFormat sample_fmts[] = { AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_NONE };
   int sample_rates[2] = { 0, -1 };
@@ -2627,7 +2627,7 @@ static int configure_audio_filters (VideoState* is, const char* afilters, int fo
       goto end;
     }
 
-  if ((ret = configure_filtergraph(is->agraph, afilters, filt_asrc, filt_asink)) < 0)
+  if ((ret = configureFilterGraph (is->agraph, afilters, filt_asrc, filt_asink)) < 0)
     goto end;
 
   is->in_audio_filter  = filt_asrc;
@@ -2687,16 +2687,16 @@ static int audioThread (void* arg) {
         is->audio_filter_src.freq = frame->sample_rate;
         last_serial = is->auddec.pkt_serial;
 
-        if ((ret = configure_audio_filters(is, afilters, 1)) < 0)
+        if ((ret = configureAudioFilters (is, afilters, 1)) < 0)
           goto the_end;
         }
 
-      if ((ret = av_buffersrc_add_frame(is->in_audio_filter, frame)) < 0)
+      if ((ret = av_buffersrc_add_frame (is->in_audio_filter, frame)) < 0)
         goto the_end;
 
       while ((ret = av_buffersink_get_frame_flags(is->out_audio_filter, frame, 0)) >= 0) {
         FrameData* fd = frame->opaque_ref ? (FrameData*)frame->opaque_ref->data : NULL;
-        tb = av_buffersink_get_time_base(is->out_audio_filter);
+        tb = av_buffersink_get_time_base (is->out_audio_filter);
 
         Frame* af;
         if (!(af = frame_queue_peek_writable (&is->sampq)))
@@ -3006,10 +3006,10 @@ static int stream_component_open (VideoState* is, int stream_index) {
       if (ret < 0)
         goto fail;
       is->audio_filter_src.fmt = avctx->sample_fmt;
-      if ((ret = configure_audio_filters (is, afilters, 0)) < 0)
+      if ((ret = configureAudioFilters (is, afilters, 0)) < 0)
         goto fail;
       sink = is->out_audio_filter;
-      sample_rate    = av_buffersink_get_sample_rate (sink);
+      sample_rate = av_buffersink_get_sample_rate (sink);
       ret = av_buffersink_get_ch_layout (sink, &ch_layout);
       if (ret < 0)
         goto fail;
