@@ -3177,7 +3177,7 @@ static void toggle_audio_display (VideoState* is) {
   }
 //}}}
 //}}}
-//{{{  stream
+
 //{{{
 static int is_realtime (AVFormatContext* s) {
 
@@ -3192,7 +3192,6 @@ static int is_realtime (AVFormatContext* s) {
   return 0;
   }
 //}}}
-
 //{{{
 static int readThread (void* arg) {
 // this thread gets the stream from the disk or the network
@@ -3597,8 +3596,7 @@ fail:
   return is;
   }
 //}}}
-//}}}
-//{{{  event loop
+
 //{{{
 static void waitEvent (VideoState* is, SDL_Event* event) {
 
@@ -3636,13 +3634,16 @@ static void eventLoop (VideoState* cur_stream) {
       //{{{
       case SDL_KEYDOWN:
         if (exit_on_keydown || event.key.keysym.sym == SDLK_ESCAPE || event.key.keysym.sym == SDLK_q) {
+          //{{{  escape, exit
           do_exit(cur_stream);
           break;
           }
+          //}}}
 
         // If we don't yet have a window, skip all key events, because read_thread might still be initializing...
         if (!cur_stream->width)
            continue;
+
         switch (event.key.keysym.sym) {
           //{{{
           case SDLK_f:
@@ -3679,17 +3680,17 @@ static void eventLoop (VideoState* cur_stream) {
             break;
           //}}}
           //{{{
-          case SDLK_a:
+          case SDLK_a: // cycle audio
             stream_cycle_channel (cur_stream, AVMEDIA_TYPE_AUDIO);
              break;
           //}}}
           //{{{
-          case SDLK_v:
+          case SDLK_v: // cycle video
             stream_cycle_channel (cur_stream, AVMEDIA_TYPE_VIDEO);
             break;
           //}}}
           //{{{
-          case SDLK_c:
+          case SDLK_c: // cycle stream
             stream_cycle_channel (cur_stream, AVMEDIA_TYPE_VIDEO);
             stream_cycle_channel (cur_stream, AVMEDIA_TYPE_AUDIO);
             stream_cycle_channel (cur_stream, AVMEDIA_TYPE_SUBTITLE);
@@ -3881,7 +3882,6 @@ static void eventLoop (VideoState* cur_stream) {
       }
     }
   }
-//}}}
 //}}}
 
 //{{{  options
