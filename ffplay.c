@@ -3233,13 +3233,14 @@ static int readThread (void* arg) {
     }
     //}}}
 
-    if (!ic) {
+  if (!ic) {
     //{{{  error
     av_log(NULL, AV_LOG_FATAL, "Could not allocate context.\n");
     ret = AVERROR(ENOMEM);
     goto fail;
     }
     //}}}
+
   ic->interrupt_callback.callback = decodeInterruptCallback;
   ic->interrupt_callback.opaque = videoState;
   if (!av_dict_get (format_opts, "scan_all_pmts", NULL, AV_DICT_MATCH_CASE)) {
