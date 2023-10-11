@@ -2118,7 +2118,7 @@ static void do_exit (VideoState* is) {
 //}}}
 //}}}
 
-//{{{  threads
+//{{{  thread utils
 //{{{
 static int decodeFrame (Decoder* d, AVFrame* frame, AVSubtitle *sub) {
 
@@ -2487,6 +2487,40 @@ static int cmp_audio_fmts (enum AVSampleFormat fmt1, int64_t channel_count1,
     return channel_count1 != channel_count2 || fmt1 != fmt2;
   }
 //}}}
+
+//{{{
+static int get_video_frame (VideoState* is, AVFrame* frame) {
+
+  int got_picture;
+  if ((got_picture = decodeFrame (&is->viddec, frame, NULL)) < 0)
+    return -1;
+
+  if (got_picture) {
+    double dpts = NAN;
+    if (frame->pts != AV_NOPTS_VALUE)
+      dpts = av_q2d (is->video_st->time_base) * frame->pts;
+
+    frame->sample_aspect_ratio = av_guess_sample_aspect_ratio (is->ic, is->video_st, frame);
+
+    if (framedrop>0 || (framedrop && get_master_sync_type (is) != AV_SYNC_VIDEO_MASTER)) {
+      if (frame->pts != AV_NOPTS_VALUE) {
+        double diff = dpts - get_master_clock (is);
+        if (!isnan (diff) && fabs (diff) < AV_NOSYNC_THRESHOLD &&
+            diff - is->frame_last_filter_delay < 0 &&
+            is->viddec.pkt_serial == is->vidclk.serial &&
+            is->videoq.nb_packets) {
+          is->frame_drops_early++;
+          av_frame_unref (frame);
+          got_picture = 0;
+          }
+        }
+      }
+    }
+
+  return got_picture;
+  }
+//}}}
+//}}}
 //{{{
 static int audio_thread (void* arg) {
 
@@ -2573,39 +2607,6 @@ the_end:
   return ret;
   }
 //}}}
-
-//{{{
-static int get_video_frame (VideoState* is, AVFrame* frame) {
-
-  int got_picture;
-  if ((got_picture = decodeFrame (&is->viddec, frame, NULL)) < 0)
-    return -1;
-
-  if (got_picture) {
-    double dpts = NAN;
-    if (frame->pts != AV_NOPTS_VALUE)
-      dpts = av_q2d (is->video_st->time_base) * frame->pts;
-
-    frame->sample_aspect_ratio = av_guess_sample_aspect_ratio (is->ic, is->video_st, frame);
-
-    if (framedrop>0 || (framedrop && get_master_sync_type (is) != AV_SYNC_VIDEO_MASTER)) {
-      if (frame->pts != AV_NOPTS_VALUE) {
-        double diff = dpts - get_master_clock (is);
-        if (!isnan (diff) && fabs (diff) < AV_NOSYNC_THRESHOLD &&
-            diff - is->frame_last_filter_delay < 0 &&
-            is->viddec.pkt_serial == is->vidclk.serial &&
-            is->videoq.nb_packets) {
-          is->frame_drops_early++;
-          av_frame_unref (frame);
-          got_picture = 0;
-          }
-        }
-      }
-    }
-
-  return got_picture;
-  }
-//}}}
 //{{{
 static int video_thread (void* arg) {
 
@@ -2637,6 +2638,7 @@ static int video_thread (void* arg) {
     ret = get_video_frame (is, frame);
     if (ret < 0)
       goto the_end;
+
     if (!ret)
       continue;
 
@@ -2723,7 +2725,6 @@ the_end:
   return 0;
   }
 //}}}
-
 //{{{
 static int subtitle_thread (void* arg) {
 
@@ -2748,7 +2749,7 @@ static int subtitle_thread (void* arg) {
       sp->height = is->subdec.avctx->height;
       sp->uploaded = 0;
 
-      /* now we can update the picture count */
+      // now we can update the picture count
       frame_queue_push (&is->subpq);
       }
     else if (got_subtitle)
@@ -2758,9 +2759,7 @@ static int subtitle_thread (void* arg) {
   return 0;
   }
 //}}}
-//}}}
-//{{{  audio
-
+//{{{  stream
 //{{{
 static int decoder_init (Decoder* d, AVCodecContext* avctx, PacketQueue* queue, SDL_cond *empty_queue_cond) {
 
@@ -2782,16 +2781,17 @@ static int decoder_init (Decoder* d, AVCodecContext* avctx, PacketQueue* queue, 
 //{{{
 static int decoder_start (Decoder* d, int (*fn)(void*), const char* thread_name, void* arg) {
 
-  packet_queue_start(d->queue);
-  d->decoder_tid = SDL_CreateThread(fn, thread_name, arg);
+  packet_queue_start (d->queue);
+  d->decoder_tid = SDL_CreateThread (fn, thread_name, arg);
   if (!d->decoder_tid) {
-    av_log(NULL, AV_LOG_ERROR, "SDL_CreateThread(): %s\n", SDL_GetError());
+    av_log (NULL, AV_LOG_ERROR, "SDL_CreateThread(): %s\n", SDL_GetError());
     return AVERROR(ENOMEM);
     }
 
   return 0;
   }
 //}}}
+
 //{{{
 static int stream_component_open (VideoState* is, int stream_index) {
 /* open a given stream. Return 0 if OK */
@@ -2982,6 +2982,7 @@ static int decode_interrupt_cb (void* ctx) {
   return is->abort_request;
   }
 //}}}
+
 //{{{
 static int stream_has_enough_packets (AVStream* st, int stream_id, PacketQueue* queue) {
   return stream_id < 0 ||
