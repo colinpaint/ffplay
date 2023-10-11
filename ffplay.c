@@ -3198,9 +3198,6 @@ static int decodeInterruptCallback (void* ctx) {
 static int readThread (void* arg) {
 // this thread gets the stream from the disk or the network
 
-  VideoState* videoState = arg;
-  SDL_mutex* wait_mutex = SDL_CreateMutex();
-
   int i, ret;
   int st_index[AVMEDIA_TYPE_NB];
   int64_t stream_start_time;
@@ -3208,6 +3205,10 @@ static int readThread (void* arg) {
   int scan_all_pmts_set = 0;
   int64_t pkt_ts;
 
+  VideoState* videoState = arg;
+  AVFormatContext* ic = avformat_alloc_context();
+
+  SDL_mutex* wait_mutex = SDL_CreateMutex();
   if (!wait_mutex) {
     //{{{  error
     av_log (NULL, AV_LOG_FATAL, "SDL_CreateMutex(): %s\n", SDL_GetError());
@@ -3228,8 +3229,7 @@ static int readThread (void* arg) {
     }
     //}}}
 
-  AVFormatContext* ic = avformat_alloc_context();
-  if (!ic) {
+    if (!ic) {
     //{{{  error
     av_log(NULL, AV_LOG_FATAL, "Could not allocate context.\n");
     ret = AVERROR(ENOMEM);
