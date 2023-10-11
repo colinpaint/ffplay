@@ -1845,11 +1845,11 @@ retry:
               for (int i = 0; i < sp->sub.num_rects; i++) {
                 AVSubtitleRect* sub_rect = sp->sub.rects[i];
 
-              uint8_t* pixels;
-              int pitch;
-              if (!SDL_LockTexture (videoState->sub_texture, (SDL_Rect*)sub_rect, (void**)&pixels, &pitch)) {
-                for (int j = 0; j < sub_rect->h; j++, pixels += pitch)
-                  memset (pixels, 0, sub_rect->w << 2);
+                uint8_t* pixels;
+                int pitch;
+                if (!SDL_LockTexture (videoState->sub_texture, (SDL_Rect*)sub_rect, (void**)&pixels, &pitch)) {
+                  for (int j = 0; j < sub_rect->h; j++, pixels += pitch)
+                    memset (pixels, 0, sub_rect->w << 2);
                   SDL_UnlockTexture (videoState->sub_texture);
                   }
                 }
@@ -1857,9 +1857,8 @@ retry:
 
             frame_queue_next (&videoState->subpq);
             }
-          else {
+          else
             break;
-            }
           }
         }
 
@@ -3803,6 +3802,7 @@ static void eventLoop (VideoState* videoState) {
           else
             last_mouse_left_click = av_gettime_relative();
           }
+        break;
       //}}}
       //{{{
       case SDL_MOUSEMOTION:
@@ -3853,7 +3853,6 @@ static void eventLoop (VideoState* videoState) {
       //}}}
       //{{{
       case SDL_WINDOWEVENT:
-
         switch (event.window.event) {
           case SDL_WINDOWEVENT_SIZE_CHANGED:
             screen_width  = videoState->width  = event.window.data1;
@@ -3862,10 +3861,14 @@ static void eventLoop (VideoState* videoState) {
                SDL_DestroyTexture (videoState->vis_texture);
                 videoState->vis_texture = NULL;
                 }
+            videoState->force_refresh = 1;
+            break;
 
           case SDL_WINDOWEVENT_EXPOSED:
             videoState->force_refresh = 1;
-            }
+            break;
+          default:;
+          }
 
         break;
       //}}}
@@ -4178,36 +4181,36 @@ int main (int argc, char** argv) {
 
     if (alwaysontop)
       flags |= SDL_WINDOW_ALWAYS_ON_TOP;
-      if (borderless)
-        flags |= SDL_WINDOW_BORDERLESS;
-      else
-        flags |= SDL_WINDOW_RESIZABLE;
+    if (borderless)
+      flags |= SDL_WINDOW_BORDERLESS;
+    else
+      flags |= SDL_WINDOW_RESIZABLE;
 
       #ifdef SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR
         SDL_SetHint (SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
       #endif
 
-      window = SDL_CreateWindow (program_name, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, default_width, default_height, flags);
-      SDL_SetHint (SDL_HINT_RENDER_SCALE_QUALITY, "linear");
-      if (window) {
-        renderer = SDL_CreateRenderer (window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    window = SDL_CreateWindow (program_name, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, default_width, default_height, flags);
+    SDL_SetHint (SDL_HINT_RENDER_SCALE_QUALITY, "linear");
+    if (window) {
+      renderer = SDL_CreateRenderer (window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
-        if (!renderer) {
-          av_log (NULL, AV_LOG_WARNING, "Failed to initialize a hardware accelerated renderer: %s\n", SDL_GetError());
-          renderer = SDL_CreateRenderer (window, -1, 0);
-          }
-
-        if (renderer) {
-          if (!SDL_GetRendererInfo (renderer, &renderer_info))
-            av_log (NULL, AV_LOG_VERBOSE, "Initialized %s renderer.\n", renderer_info.name);
-          }
+      if (!renderer) {
+        av_log (NULL, AV_LOG_WARNING, "Failed to initialize a hardware accelerated renderer: %s\n", SDL_GetError());
+        renderer = SDL_CreateRenderer (window, -1, 0);
         }
 
-      if (!window || !renderer || !renderer_info.num_texture_formats) {
-        av_log (NULL, AV_LOG_FATAL, "Failed to create window or renderer: %s", SDL_GetError());
-        do_exit (NULL);
+      if (renderer) {
+        if (!SDL_GetRendererInfo (renderer, &renderer_info))
+          av_log (NULL, AV_LOG_VERBOSE, "Initialized %s renderer.\n", renderer_info.name);
         }
       }
+
+    if (!window || !renderer || !renderer_info.num_texture_formats) {
+      av_log (NULL, AV_LOG_FATAL, "Failed to create window or renderer: %s", SDL_GetError());
+      do_exit (NULL);
+      }
+    }
     //}}}
 
   VideoState* videoState = stream_open (input_filename, file_iformat);
