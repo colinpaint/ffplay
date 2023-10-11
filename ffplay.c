@@ -1,4 +1,4 @@
-//{{{
+//{{{  description
 /*
  * Copyright (c) 2003 Fabrice Bellard
  *
@@ -41,12 +41,16 @@
 #include "libavutil/samplefmt.h"
 #include "libavutil/time.h"
 #include "libavutil/bprint.h"
+
 #include "libavformat/avformat.h"
 #include "libavdevice/avdevice.h"
+
 #include "libswscale/swscale.h"
 #include "libavutil/opt.h"
 #include "libavutil/tx.h"
+
 #include "libswresample/swresample.h"
+
 #include "libavfilter/avfilter.h"
 #include "libavfilter/buffersink.h"
 #include "libavfilter/buffersrc.h"
@@ -103,8 +107,6 @@ const int program_birth_year = 2003;
 #define SAMPLE_ARRAY_SIZE (8 * 65536)
 
 #define CURSOR_HIDE_DELAY 1000000
-
-#define USE_ONEPASS_SUBTITLE_RENDER 1
 
 #define VIDEO_PICTURE_QUEUE_SIZE 3
 #define SUBPICTURE_QUEUE_SIZE 16
@@ -1584,7 +1586,8 @@ static void drawVideoDisplay (VideoState* is) {
             sp->width = vp->width;
             sp->height = vp->height;
             }
-          if (realloc_texture (&is->sub_texture, SDL_PIXELFORMAT_ARGB8888, sp->width, sp->height, SDL_BLENDMODE_BLEND, 1) < 0)
+          if (realloc_texture (&is->sub_texture, SDL_PIXELFORMAT_ARGB8888, 
+                               sp->width, sp->height, SDL_BLENDMODE_BLEND, 1) < 0)
             return;
 
           for (int i = 0; i < sp->sub.num_rects; i++) {
@@ -1600,9 +1603,12 @@ static void drawVideoDisplay (VideoState* is) {
                                                         sub_rect->w, sub_rect->h, AV_PIX_FMT_BGRA,
                                                         0, NULL, NULL, NULL);
             if (!is->sub_convert_ctx) {
+              //{{{  error return
               av_log (NULL, AV_LOG_FATAL, "Cannot initialize the conversion context\n");
               return;
               }
+              //}}}
+
             if (!SDL_LockTexture(is->sub_texture, (SDL_Rect *)sub_rect, (void **)pixels, pitch)) {
               sws_scale (is->sub_convert_ctx, (const uint8_t * const *)sub_rect->data, sub_rect->linesize,
                          0, sub_rect->h, pixels, pitch);
@@ -1634,27 +1640,13 @@ static void drawVideoDisplay (VideoState* is) {
   SDL_RenderCopyEx (renderer, is->vid_texture, NULL, &rect, 0, NULL, vp->flip_v ? SDL_FLIP_VERTICAL : 0);
   set_sdl_yuv_conversion_mode (NULL);
 
-  if (sp) {
-    #if USE_ONEPASS_SUBTITLE_RENDER
-      SDL_RenderCopy (renderer, is->sub_texture, NULL, &rect);
-    #else
-      double xratio = (double)rect.w / (double)sp->width;
-      double yratio = (double)rect.h / (double)sp->height;
-      for (int i = 0; i < sp->sub.num_rects; i++) {
-        SDL_Rect* sub_rect = (SDL_Rect*)sp->sub.rects[i];
-        SDL_Rect target = {.x = rect.x + sub_rect->x * xratio,
-                           .y = rect.y + sub_rect->y * yratio,
-                           .w = sub_rect->w * xratio,
-                           .h = sub_rect->h * yratio};
-        SDL_RenderCopy (renderer, is->sub_texture, sub_rect, &target);
-        }
-    #endif
-    }
+  if (sp)
+    SDL_RenderCopy (renderer, is->sub_texture, NULL, &rect);
   }
 //}}}
 //{{{
-static void video_display (VideoState* is) {
-/* display the current picture, if any */
+static void videoDisplay (VideoState* is) {
+// display the current picture, if any
 
   if (!is->width)
     videoOpen (is);
@@ -1662,7 +1654,7 @@ static void video_display (VideoState* is) {
   SDL_SetRenderDrawColor (renderer, 0, 0, 0, 255);
   SDL_RenderClear (renderer);
 
-  if (is->audio_st && is->show_mode != SHOW_MODE_VIDEO)
+  if (is->audio_st && (is->show_mode != SHOW_MODE_VIDEO))
     drawVideoAudioDisplay (is);
   else if (is->video_st)
     drawVideoDisplay (is);
@@ -1768,7 +1760,7 @@ static void videoRefresh (void* opaque, double* remaining_time) {
   if (!display_disable && is->show_mode != SHOW_MODE_VIDEO && is->audio_st) {
     time = av_gettime_relative() / 1000000.0;
     if (is->force_refresh || is->last_vis_time + rdftspeed < time) {
-      video_display (is);
+      videoDisplay (is);
       is->last_vis_time = time;
       }
     *remaining_time = FFMIN(*remaining_time, is->last_vis_time + rdftspeed - time);
@@ -1867,11 +1859,11 @@ retry:
       }
 
   display:
-    /* display picture */
+    // display picture
     if (!display_disable &&
         is->force_refresh &&
         is->show_mode == SHOW_MODE_VIDEO && is->pictq.rindex_shown)
-      video_display (is);
+      videoDisplay (is);
     }
 
   is->force_refresh = 0;
