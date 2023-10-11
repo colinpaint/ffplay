@@ -15,6 +15,7 @@ endif()
 
 set (SDL_TEST OFF CACHE BOOL "" FORCE)
 set (SDL_TESTS OFF CACHE BOOL "" FORCE)
+#add_subdirectory (SDL)
 add_subdirectory (SDL2)
 
 project (ffplay VERSION 1.0.0)
@@ -39,6 +40,7 @@ project (ffplay VERSION 1.0.0)
     target_link_libraries (${PROJECT_NAME} PUBLIC PkgConfig::FFMPEG)
 
     # SDL2
+    #target_include_directories (${PROJECT_NAME} PUBLIC SDL/include/SDL3)
     target_include_directories (${PROJECT_NAME} PUBLIC SDL2/include)
     target_link_directories (${PROJECT_NAME} PUBLIC lib/linux64)
     target_link_libraries (${PROJECT_NAME} PUBLIC libSDL2.a)
