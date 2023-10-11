@@ -2449,7 +2449,7 @@ static int get_video_frame (VideoState* is, AVFrame* frame) {
   }
 //}}}
 //{{{
-static int video_thread (void* arg) {
+static int videoThread (void* arg) {
 
   VideoState* is = arg;
   AVFrame* frame = av_frame_alloc();
@@ -2642,7 +2642,7 @@ end:
   }
 //}}}
 //{{{
-static int audio_thread (void* arg) {
+static int audioThread (void* arg) {
 
   int last_serial = -1;
   int reconfigure;
@@ -2729,7 +2729,7 @@ the_end:
 //}}}
 
 //{{{
-static int subtitle_thread (void* arg) {
+static int subtitleThread (void* arg) {
 
   VideoState* is = arg;
 
@@ -3039,7 +3039,7 @@ static int stream_component_open (VideoState* is, int stream_index) {
         is->auddec.start_pts = is->audio_st->start_time;
         is->auddec.start_pts_tb = is->audio_st->time_base;
         }
-      if ((ret = decoder_start (&is->auddec, audio_thread, "audio_decoder", is)) < 0)
+      if ((ret = decoder_start (&is->auddec, audioThread, "audio_decoder", is)) < 0)
         goto out;
 
       SDL_PauseAudioDevice (audio_dev, 0);
@@ -3052,7 +3052,7 @@ static int stream_component_open (VideoState* is, int stream_index) {
 
       if ((ret = decoder_init(&is->viddec, avctx, &is->videoq, is->continue_read_thread)) < 0)
         goto fail;
-      if ((ret = decoder_start(&is->viddec, video_thread, "video_decoder", is)) < 0)
+      if ((ret = decoder_start(&is->viddec, videoThread, "video_decoder", is)) < 0)
         goto out;
 
       is->queue_attachments_req = 1;
@@ -3066,7 +3066,7 @@ static int stream_component_open (VideoState* is, int stream_index) {
 
       if ((ret = decoder_init(&is->subdec, avctx, &is->subtitleq, is->continue_read_thread)) < 0)
         goto fail;
-      if ((ret = decoder_start(&is->subdec, subtitle_thread, "subtitle_decoder", is)) < 0)
+      if ((ret = decoder_start(&is->subdec, subtitleThread, "subtitle_decoder", is)) < 0)
         goto out;
 
       break;
