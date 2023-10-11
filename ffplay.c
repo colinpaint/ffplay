@@ -1368,27 +1368,6 @@ static void do_exit (VideoState* is) {
   }
 //}}}
 
-//{{{
-static void sigterm_handler (int sig) {
-  exit (123);
-  }
-//}}}
-//{{{
-static void set_default_window_size (int width, int height, AVRational sar) {
-
-  SDL_Rect rect;
-  int max_width  = screen_width  ? screen_width  : INT_MAX;
-  int max_height = screen_height ? screen_height : INT_MAX;
-  if (max_width == INT_MAX && max_height == INT_MAX)
-    max_height = height;
-
-  calculate_display_rect (&rect, 0, 0, max_width, max_height, width, height, sar);
-
-  default_width = rect.w;
-  default_height = rect.h;
-  }
-//}}}
-
 // clock
 //{{{
 static double get_clock (Clock* c) {
@@ -1557,6 +1536,21 @@ static void update_video_pts (VideoState* is, double pts, int serial) {
   /* update current video pts */
   set_clock (&is->vidclk, pts, serial);
   sync_clock_to_slave (&is->extclk, &is->vidclk);
+  }
+//}}}
+//{{{
+static void set_default_window_size (int width, int height, AVRational sar) {
+
+  SDL_Rect rect;
+  int max_width  = screen_width  ? screen_width  : INT_MAX;
+  int max_height = screen_height ? screen_height : INT_MAX;
+  if (max_width == INT_MAX && max_height == INT_MAX)
+    max_height = height;
+
+  calculate_display_rect (&rect, 0, 0, max_width, max_height, width, height, sar);
+
+  default_width = rect.w;
+  default_height = rect.h;
   }
 //}}}
 //{{{
@@ -4066,6 +4060,11 @@ void show_help_default (const char* opt, const char* arg) {
   }
 //}}}
 
+//{{{
+static void sigterm_handler (int sig) {
+  exit (123);
+  }
+//}}}
 //{{{
 /* Called from the main */
 int main (int argc, char** argv) {

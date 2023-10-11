@@ -48,9 +48,10 @@ extern const char program_name[];
 extern const int program_birth_year;
 //}}}
 
-extern AVDictionary *sws_dict;
-extern AVDictionary *swr_opts;
-extern AVDictionary *format_opts, *codec_opts;
+extern AVDictionary* sws_dict;
+extern AVDictionary* swr_opts;
+extern AVDictionary* format_opts;
+extern AVDictionary* codec_opts;
 extern int hide_banner;
 
 //{{{
@@ -79,13 +80,13 @@ void log_callback_help (void* ptr, int level, const char* fmt, va_list vl);
  * Fallback for options that are not explicitly handled, these will be
  * parsed through AVOptions.
  */
-int opt_default (void *optctx, const char *opt, const char *arg);
+int opt_default (void* optctx, const char* opt, const char* arg);
 //}}}
 //{{{
 /**
  * Limit the execution time.
  */
-int opt_timelimit (void *optctx, const char *opt, const char *arg);
+int opt_timelimit (void* optctx, const char* opt, const char* arg);
 //}}}
 //{{{
 /**
@@ -99,7 +100,7 @@ int opt_timelimit (void *optctx, const char *opt, const char *arg);
  * @param min the minimum valid accepted value
  * @param max the maximum valid accepted value
  */
-int parse_number (const char *context, const char *numstr, int type,
+int parse_number (const char* context, const char* numstr, int type,
                  double min, double max, double *dst);
 //}}}
 
@@ -163,7 +164,7 @@ typedef struct OptionDef {
  * @param rej_flags don't print options which have any of those flags set.
  * @param alt_flags print only options that have at least one of those flags set
  */
-void show_help_options (const OptionDef *options, const char *msg, int req_flags,
+void show_help_options (const OptionDef* options, const char* msg, int req_flags,
                        int rej_flags, int alt_flags);
 //}}}
 
@@ -173,14 +174,14 @@ void show_help_options (const OptionDef *options, const char *msg, int req_flags
  * Show help for all options with given flags in class and all its
  * children.
  */
-void show_help_children (const AVClass *class, int flags);
+void show_help_children (const AVClass* class, int flags);
 //}}}
 //{{{
 /**
  * Per-fftool specific help handler. Implemented in each
  * fftool, called by show_help().
  */
-void show_help_default (const char *opt, const char *arg);
+void show_help_default (const char* opt, const char* arg);
 //}}}
 
 //{{{
@@ -196,7 +197,7 @@ void show_help_default (const char *opt, const char *arg);
  * argument without a leading option name flag. NULL if such arguments do
  * not have to be processed.
  */
-int parse_options (void *optctx, int argc, char **argv, const OptionDef *options,
+int parse_options (void* optctx, int argc, char** argv, const OptionDef* options,
                   int (* parse_arg_function)(void *optctx, const char*));
 //}}}
 //{{{
@@ -205,7 +206,7 @@ int parse_options (void *optctx, int argc, char **argv, const OptionDef *options
  *
  * @return on success 1 if arg was consumed, 0 otherwise; negative number on error
  */
-int parse_option (void *optctx, const char *opt, const char *arg,
+int parse_option (void* optctx, const char* opt, const char* arg,
                  const OptionDef *options);
 //}}}
 
@@ -303,7 +304,7 @@ int parse_optgroup (void *optctx, OptionGroup *g);
  * OptionGroupList in OptionParseContext.groups. The order of group lists is the
  * same as the order of group definitions.
  */
-int split_commandline (OptionParseContext *octx, int argc, char *argv[],
+int split_commandline (OptionParseContext* octx, int argc, char *argv[],
                       const OptionDef *options,
                       const OptionGroupDef *groups, int nb_groups);
 
@@ -312,19 +313,19 @@ int split_commandline (OptionParseContext *octx, int argc, char *argv[],
 /**
  * Free all allocated memory in an OptionParseContext.
  */
-void uninit_parse_context (OptionParseContext *octx);
+void uninit_parse_context (OptionParseContext* octx);
 //}}}
 //{{{
 /**
  * Find the '-loglevel' option in the command line args and apply it.
  */
-void parse_loglevel (int argc, char **argv, const OptionDef *options);
+void parse_loglevel (int argc, char** argv, const OptionDef* options);
 //}}}
 //{{{
 /**
  * Return index of option opt in argv or 0 if not found.
  */
-int locate_option (int argc, char **argv, const OptionDef *options,
+int locate_option (int argc, char** argv, const OptionDef* options,
                   const char *optname);
 //}}}
 //{{{
@@ -337,7 +338,7 @@ int locate_option (int argc, char **argv, const OptionDef *options,
  *
  * @return 1 if the stream matches, 0 if it doesn't, <0 on error
  */
-int check_stream_specifier (AVFormatContext *s, AVStream *st, const char *spec);
+int check_stream_specifier (AVFormatContext* s, AVStream* st, const char* spec);
 //}}}
 //{{{
 /**
@@ -355,7 +356,7 @@ int check_stream_specifier (AVFormatContext *s, AVStream *st, const char *spec);
  * @param dst a pointer to the created dictionary
  * @return a non-negative number on success, a negative error code on failure
  */
-int filter_codec_opts (const AVDictionary *opts, enum AVCodecID codec_id,
+int filter_codec_opts (const AVDictionary* opts, enum AVCodecID codec_id,
                       AVFormatContext *s, AVStream *st, const AVCodec *codec,
                       AVDictionary **dst);
 //}}}
@@ -382,7 +383,7 @@ int setup_find_stream_info_opts (AVFormatContext *s,
  *
  * @see av_strerror()
  */
-void print_error (const char *filename, int err);
+void print_error (const char* filename, int err);
 //}}}
 //{{{
 /**
@@ -390,7 +391,7 @@ void print_error (const char *filename, int err);
  * current version of the repository and of the libav* libraries used by
  * the program.
  */
-void show_banner (int argc, char **argv, const OptionDef *options);
+void show_banner (int argc, char** argv, const OptionDef* options);
 //}}}
 //{{{
 /**
@@ -418,7 +419,7 @@ int read_yesno();
  * @param codec_name name of the codec for which to look for the
  * preset, may be NULL
  */
-FILE* get_preset_file (char *filename, size_t filename_size,
+FILE* get_preset_file (char* filename, size_t filename_size,
                       const char *preset_name, int is_path, const char *codec_name);
 //}}}
 //{{{
@@ -432,7 +433,7 @@ FILE* get_preset_file (char *filename, size_t filename_size,
  * @param new_size number of elements to place in reallocated array
  * @return a non-negative number on success, a negative error code on failure
  */
-int grow_array (void **array, int elem_size, int *size, int new_size);
+int grow_array (void** array, int elem_size, int* size, int new_size);
 //}}}
 //{{{
 /**
@@ -446,7 +447,7 @@ int grow_array (void **array, int elem_size, int *size, int new_size);
  *                  *nb_elems will be incremented by one by this function.
  * @return pointer to the newly allocated entry or NULL on failure
  */
-void*  allocate_array_elem (void *array, size_t elem_size, int *nb_elems);
+void*  allocate_array_elem (void* array, size_t elem_size, int* nb_elems);
 //}}}
 
 #define GROW_ARRAY(array, nb_elems) grow_array((void**)&array, sizeof(*array), &nb_elems, nb_elems + 1)

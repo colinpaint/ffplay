@@ -189,7 +189,7 @@ static int warned_cfg = 0;
 //}}}
 
 //{{{
-static void print_all_libs_info(int flags, int level)
+static void print_all_libs_info (int flags, int level)
 {
     PRINT_LIB_INFO(avutil,     AVUTIL,     flags, level);
     PRINT_LIB_INFO(avcodec,    AVCODEC,    flags, level);
@@ -202,7 +202,7 @@ static void print_all_libs_info(int flags, int level)
 }
 //}}}
 //{{{
-static void print_program_info(int flags, int level)
+static void print_program_info (int flags, int level)
 {
     const char *indent = flags & INDENT? "  " : "";
 
@@ -217,7 +217,7 @@ static void print_program_info(int flags, int level)
 }
 //}}}
 //{{{
-static void print_buildconf(int flags, int level)
+static void print_buildconf (int flags, int level)
 {
     const char *indent = flags & INDENT ? "  " : "";
     char str[] = { FFMPEG_CONFIGURATION };
@@ -244,7 +244,7 @@ static void print_buildconf(int flags, int level)
 }
 //}}}
 //{{{
-void show_banner(int argc, char **argv, const OptionDef *options)
+void show_banner (int argc, char **argv, const OptionDef *options)
 {
     int idx = locate_option(argc, argv, options, "version");
     if (hide_banner || idx)
@@ -256,7 +256,7 @@ void show_banner(int argc, char **argv, const OptionDef *options)
 }
 //}}}
 //{{{
-int show_version(void *optctx, const char *opt, const char *arg)
+int show_version (void *optctx, const char *opt, const char *arg)
 {
     av_log_set_callback(log_callback_help);
     print_program_info (SHOW_COPYRIGHT, AV_LOG_INFO);
@@ -266,7 +266,7 @@ int show_version(void *optctx, const char *opt, const char *arg)
 }
 //}}}
 //{{{
-int show_buildconf(void *optctx, const char *opt, const char *arg)
+int show_buildconf (void *optctx, const char *opt, const char *arg)
 {
     av_log_set_callback(log_callback_help);
     print_buildconf      (INDENT|0, AV_LOG_INFO);
@@ -289,7 +289,7 @@ int show_buildconf(void *optctx, const char *opt, const char *arg)
     }                                                                        \
 //}}}
 //{{{
-static void print_codec(const AVCodec *c)
+static void print_codec (const AVCodec *c)
 {
     int encoder = av_codec_is_encoder(c);
 
@@ -395,7 +395,7 @@ static void print_codec(const AVCodec *c)
 }
 //}}}
 //{{{
-static const AVCodec *next_codec_for_id(enum AVCodecID id, void **iter,
+static const AVCodec *next_codec_for_id (enum AVCodecID id, void **iter,
                                         int encoder)
 {
     const AVCodec *c;
@@ -408,7 +408,7 @@ static const AVCodec *next_codec_for_id(enum AVCodecID id, void **iter,
 }
 //}}}
 //{{{
-static void show_help_codec(const char *name, int encoder)
+static void show_help_codec (const char *name, int encoder)
 {
     const AVCodecDescriptor *desc;
     const AVCodec *codec;
@@ -445,7 +445,7 @@ static void show_help_codec(const char *name, int encoder)
 }
 //}}}
 //{{{
-static void show_help_demuxer(const char *name)
+static void show_help_demuxer (const char *name)
 {
     const AVInputFormat *fmt = av_find_input_format(name);
 
@@ -464,7 +464,7 @@ static void show_help_demuxer(const char *name)
 }
 //}}}
 //{{{
-static void show_help_protocol(const char *name)
+static void show_help_protocol (const char *name)
 {
     const AVClass *proto_class;
 
@@ -483,7 +483,7 @@ static void show_help_protocol(const char *name)
 }
 //}}}
 //{{{
-static void show_help_muxer(const char *name)
+static void show_help_muxer (const char *name)
 {
     const AVCodecDescriptor *desc;
     const AVOutputFormat *fmt = av_guess_format(name, NULL, NULL);
@@ -519,7 +519,7 @@ static void show_help_muxer(const char *name)
 
 #if CONFIG_AVFILTER
 //{{{
-static void show_help_filter(const char *name)
+static void show_help_filter (const char *name)
 {
 #if CONFIG_AVFILTER
     const AVFilter *f = avfilter_get_by_name(name);
@@ -576,7 +576,7 @@ static void show_help_filter(const char *name)
 #endif
 
 //{{{
-static void show_help_bsf(const char *name)
+static void show_help_bsf (const char *name)
 {
     const AVBitStreamFilter *bsf = av_bsf_get_by_name(name);
 
@@ -596,7 +596,7 @@ static void show_help_bsf(const char *name)
 }
 //}}}
 //{{{
-int show_help(void *optctx, const char *opt, const char *arg)
+int show_help (void *optctx, const char *opt, const char *arg)
 {
     char *topic, *par;
     av_log_set_callback(log_callback_help);
@@ -635,7 +635,7 @@ int show_help(void *optctx, const char *opt, const char *arg)
 }
 //}}}
 //{{{
-static void print_codecs_for_id(enum AVCodecID id, int encoder)
+static void print_codecs_for_id (enum AVCodecID id, int encoder)
 {
     void *iter = NULL;
     const AVCodec *codec;
@@ -649,7 +649,7 @@ static void print_codecs_for_id(enum AVCodecID id, int encoder)
 }
 //}}}
 //{{{
-static int compare_codec_desc(const void *a, const void *b)
+static int compare_codec_desc (const void *a, const void *b)
 {
     const AVCodecDescriptor * const *da = a;
     const AVCodecDescriptor * const *db = b;
@@ -659,7 +659,7 @@ static int compare_codec_desc(const void *a, const void *b)
 }
 //}}}
 //{{{
-static int get_codecs_sorted(const AVCodecDescriptor ***rcodecs)
+static int get_codecs_sorted (const AVCodecDescriptor ***rcodecs)
 {
     const AVCodecDescriptor *desc = NULL;
     const AVCodecDescriptor **codecs;
@@ -679,7 +679,7 @@ static int get_codecs_sorted(const AVCodecDescriptor ***rcodecs)
 }
 //}}}
 //{{{
-static char get_media_type_char(enum AVMediaType type)
+static char get_media_type_char (enum AVMediaType type)
 {
     switch (type) {
         case AVMEDIA_TYPE_VIDEO:    return 'V';
@@ -693,7 +693,7 @@ static char get_media_type_char(enum AVMediaType type)
 //}}}
 
 //{{{
-int show_codecs(void *optctx, const char *opt, const char *arg)
+int show_codecs (void *optctx, const char *opt, const char *arg)
 {
     const AVCodecDescriptor **codecs;
     unsigned i;
@@ -755,7 +755,7 @@ int show_codecs(void *optctx, const char *opt, const char *arg)
 }
 //}}}
 //{{{
-static void print_codecs(int encoder)
+static void print_codecs (int encoder)
 {
     const AVCodecDescriptor **codecs;
     unsigned i, nb_codecs = get_codecs_sorted(&codecs);
@@ -797,21 +797,21 @@ static void print_codecs(int encoder)
 //}}}
 
 //{{{
-int show_decoders(void *optctx, const char *opt, const char *arg)
+int show_decoders (void *optctx, const char *opt, const char *arg)
 {
     print_codecs(0);
     return 0;
 }
 //}}}
 //{{{
-int show_encoders(void *optctx, const char *opt, const char *arg)
+int show_encoders (void *optctx, const char *opt, const char *arg)
 {
     print_codecs(1);
     return 0;
 }
 //}}}
 //{{{
-int show_bsfs(void *optctx, const char *opt, const char *arg)
+int show_bsfs (void *optctx, const char *opt, const char *arg)
 {
     const AVBitStreamFilter *bsf = NULL;
     void *opaque = NULL;
@@ -824,7 +824,7 @@ int show_bsfs(void *optctx, const char *opt, const char *arg)
 }
 //}}}
 //{{{
-int show_filters(void *optctx, const char *opt, const char *arg)
+int show_filters (void *optctx, const char *opt, const char *arg)
 {
 #if CONFIG_AVFILTER
     const AVFilter *filter = NULL;
@@ -875,7 +875,7 @@ int show_filters(void *optctx, const char *opt, const char *arg)
 //}}}
 
 //{{{
-static int is_device(const AVClass *avclass)
+static int is_device (const AVClass *avclass)
 {
     if (!avclass)
         return 0;
@@ -883,7 +883,7 @@ static int is_device(const AVClass *avclass)
 }
 //}}}
 //{{{
-static int show_formats_devices(void *optctx, const char *opt, const char *arg, int device_only, int muxdemuxers)
+static int show_formats_devices (void *optctx, const char *opt, const char *arg, int device_only, int muxdemuxers)
 {
     void *ifmt_opaque = NULL;
     const AVInputFormat *ifmt  = NULL;
@@ -948,31 +948,31 @@ static int show_formats_devices(void *optctx, const char *opt, const char *arg, 
 //}}}
 
 //{{{
-int show_formats(void *optctx, const char *opt, const char *arg)
+int show_formats (void *optctx, const char *opt, const char *arg)
 {
     return show_formats_devices(optctx, opt, arg, 0, SHOW_DEFAULT);
 }
 //}}}
 //{{{
-int show_muxers(void *optctx, const char *opt, const char *arg)
+int show_muxers (void *optctx, const char *opt, const char *arg)
 {
     return show_formats_devices(optctx, opt, arg, 0, SHOW_MUXERS);
 }
 //}}}
 //{{{
-int show_demuxers(void *optctx, const char *opt, const char *arg)
+int show_demuxers (void *optctx, const char *opt, const char *arg)
 {
     return show_formats_devices(optctx, opt, arg, 0, SHOW_DEMUXERS);
 }
 //}}}
 //{{{
-int show_devices(void *optctx, const char *opt, const char *arg)
+int show_devices (void *optctx, const char *opt, const char *arg)
 {
     return show_formats_devices(optctx, opt, arg, 1, SHOW_DEFAULT);
 }
 //}}}
 //{{{
-int show_protocols(void *optctx, const char *opt, const char *arg)
+int show_protocols (void *optctx, const char *opt, const char *arg)
 {
     void *opaque = NULL;
     const char *name;
@@ -988,7 +988,7 @@ int show_protocols(void *optctx, const char *opt, const char *arg)
 }
 //}}}
 //{{{
-int show_colors(void *optctx, const char *opt, const char *arg)
+int show_colors (void *optctx, const char *opt, const char *arg)
 {
     const char *name;
     const uint8_t *rgb;
@@ -1003,7 +1003,7 @@ int show_colors(void *optctx, const char *opt, const char *arg)
 }
 //}}}
 //{{{
-int show_pix_fmts(void *optctx, const char *opt, const char *arg)
+int show_pix_fmts (void *optctx, const char *opt, const char *arg)
 {
     const AVPixFmtDescriptor *pix_desc = NULL;
 
@@ -1042,7 +1042,7 @@ int show_pix_fmts(void *optctx, const char *opt, const char *arg)
 }
 //}}}
 //{{{
-int show_layouts(void *optctx, const char *opt, const char *arg)
+int show_layouts (void *optctx, const char *opt, const char *arg)
 {
     const AVChannelLayout *ch_layout;
     void *iter = NULL;
@@ -1076,7 +1076,7 @@ int show_layouts(void *optctx, const char *opt, const char *arg)
 }
 //}}}
 //{{{
-int show_sample_fmts(void *optctx, const char *opt, const char *arg)
+int show_sample_fmts (void *optctx, const char *opt, const char *arg)
 {
     int i;
     char fmt_str[128];
@@ -1086,7 +1086,7 @@ int show_sample_fmts(void *optctx, const char *opt, const char *arg)
 }
 //}}}
 //{{{
-int show_dispositions(void *optctx, const char *opt, const char *arg)
+int show_dispositions (void *optctx, const char *opt, const char *arg)
 {
     for (int i = 0; i < 32; i++) {
         const char *str = av_disposition_to_string(1U << i);
@@ -1097,7 +1097,7 @@ int show_dispositions(void *optctx, const char *opt, const char *arg)
 }
 //}}}
 //{{{
-int opt_cpuflags(void *optctx, const char *opt, const char *arg)
+int opt_cpuflags (void *optctx, const char *opt, const char *arg)
 {
     int ret;
     unsigned flags = av_get_cpu_flags();
@@ -1110,7 +1110,7 @@ int opt_cpuflags(void *optctx, const char *opt, const char *arg)
 }
 //}}}
 //{{{
-int opt_cpucount(void *optctx, const char *opt, const char *arg)
+int opt_cpucount (void *optctx, const char *opt, const char *arg)
 {
     int ret;
     int count;
@@ -1137,7 +1137,7 @@ int opt_cpucount(void *optctx, const char *opt, const char *arg)
 }
 //}}}
 //{{{
-static void expand_filename_template(AVBPrint *bp, const char *template,
+static void expand_filename_template (AVBPrint *bp, const char *template,
                                      struct tm *tm)
 {
     int c;
@@ -1166,7 +1166,7 @@ static void expand_filename_template(AVBPrint *bp, const char *template,
 }
 //}}}
 //{{{
-static void log_callback_report(void *ptr, int level, const char *fmt, va_list vl)
+static void log_callback_report (void *ptr, int level, const char *fmt, va_list vl)
 {
     va_list vl2;
     char line[1024];
@@ -1184,7 +1184,7 @@ static void log_callback_report(void *ptr, int level, const char *fmt, va_list v
 //}}}
 
 //{{{
-int init_report(const char *env, FILE **file)
+int init_report (const char *env, FILE **file)
 {
     char *filename_template = NULL;
     char *key, *val;
@@ -1270,13 +1270,13 @@ int init_report(const char *env, FILE **file)
 }
 //}}}
 //{{{
-int opt_report(void *optctx, const char *opt, const char *arg)
+int opt_report (void *optctx, const char *opt, const char *arg)
 {
     return init_report(NULL, NULL);
 }
 //}}}
 //{{{
-int opt_max_alloc(void *optctx, const char *opt, const char *arg)
+int opt_max_alloc (void *optctx, const char *opt, const char *arg)
 {
     char *tail;
     size_t max;
@@ -1291,7 +1291,7 @@ int opt_max_alloc(void *optctx, const char *opt, const char *arg)
 }
 //}}}
 //{{{
-int opt_loglevel(void *optctx, const char *opt, const char *arg)
+int opt_loglevel (void *optctx, const char *opt, const char *arg)
 {
     const struct { const char *name; int level; } log_levels[] = {
         { "quiet"  , AV_LOG_QUIET   },
@@ -1371,7 +1371,7 @@ end:
 
 #if CONFIG_AVDEVICE
 //{{{
-static void print_device_list(const AVDeviceInfoList *device_list)
+static void print_device_list (const AVDeviceInfoList *device_list)
 {
     // print devices
     for (int i = 0; i < device_list->nb_devices; i++) {
@@ -1393,7 +1393,7 @@ static void print_device_list(const AVDeviceInfoList *device_list)
 }
 //}}}
 //{{{
-static int print_device_sources(const AVInputFormat *fmt, AVDictionary *opts)
+static int print_device_sources (const AVInputFormat *fmt, AVDictionary *opts)
 {
     int ret;
     AVDeviceInfoList *device_list = NULL;
@@ -1415,7 +1415,7 @@ static int print_device_sources(const AVInputFormat *fmt, AVDictionary *opts)
 }
 //}}}
 //{{{
-static int print_device_sinks(const AVOutputFormat *fmt, AVDictionary *opts)
+static int print_device_sinks (const AVOutputFormat *fmt, AVDictionary *opts)
 {
     int ret;
     AVDeviceInfoList *device_list = NULL;
@@ -1437,7 +1437,7 @@ static int print_device_sinks(const AVOutputFormat *fmt, AVDictionary *opts)
 }
 //}}}
 //{{{
-static int show_sinks_sources_parse_arg(const char *arg, char **dev, AVDictionary **opts)
+static int show_sinks_sources_parse_arg (const char *arg, char **dev, AVDictionary **opts)
 {
     int ret;
     if (arg) {
@@ -1460,7 +1460,7 @@ static int show_sinks_sources_parse_arg(const char *arg, char **dev, AVDictionar
 }
 //}}}
 //{{{
-int show_sources(void *optctx, const char *opt, const char *arg)
+int show_sources (void *optctx, const char *opt, const char *arg)
 {
     const AVInputFormat *fmt = NULL;
     char *dev = NULL;
@@ -1499,7 +1499,7 @@ int show_sources(void *optctx, const char *opt, const char *arg)
 }
 //}}}
 //{{{
-int show_sinks(void *optctx, const char *opt, const char *arg)
+int show_sinks (void *optctx, const char *opt, const char *arg)
 {
     const AVOutputFormat *fmt = NULL;
     char *dev = NULL;
