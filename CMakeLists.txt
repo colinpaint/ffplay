@@ -28,16 +28,18 @@ project (ffplay VERSION 1.0.0)
     target_include_directories (${PROJECT_NAME} PUBLIC include/ffmpeg)
     target_link_directories (${PROJECT_NAME} PUBLIC lib/windows64)
     target_link_libraries (${PROJECT_NAME} PUBLIC SDL2
-                                                  avdevice avfilter avformat avcodec avutil
-                                                  swresample swscale)
+                           avdevice avfilter avformat avcodec avutil swresample swscale)
 
   else()
+    # FFmpeg
     find_package (PkgConfig REQUIRED)
     pkg_check_modules (FFMPEG REQUIRED IMPORTED_TARGET
-                       libavdevice libavfilter libavformat libavcodec libavutil
-                       libswresample libswscale)
+                       libavdevice libavfilter libavformat libavcodec libavutil libswresample libswscale)
+    target_include_directories (${PROJECT_NAME} PUBLIC . ../FFmpeg)
+    target_link_libraries (${PROJECT_NAME} PUBLIC PkgConfig::FFMPEG)
 
-    target_include_directories (${PROJECT_NAME} PUBLIC . ../FFmpeg SDL2)
-    #target_include_directories (${PROJECT_NAME} PUBLIC PkgConfig::FFMPEG SDL2)
-    target_link_libraries (${PROJECT_NAME} PUBLIC PkgConfig::FFMPEG SDL2)
+    # SDL2
+    target_include_directories (${PROJECT_NAME} PUBLIC SDL2/include)
+    target_link_directories (${PROJECT_NAME} PUBLIC lib/linux64)
+    target_link_libraries (${PROJECT_NAME} PUBLIC libSDL2.a)
   endif()
