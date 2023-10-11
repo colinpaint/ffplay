@@ -6,7 +6,7 @@ set (CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "limited configs" FO
 #
 if (CMAKE_HOST_SYSTEM_NAME STREQUAL Windows)
   set (BUILD_MSVC_COMPILE_OPTIONS "/arch:AVX" CACHE STRING "msvc compile options")
-  option (USE_AVX512 "use avx512" OFF)
+  option (USE_AVX512 "use avx512" ON)
   option (USE_AVX2 "use avx2" OFF)
 elseif (CMAKE_HOST_SYSTEM_NAME STREQUAL Linux)
   set (BUILD_LINUX_COMPILE_OPTIONS "-Ofast" CACHE STRING "gcc compile options")
@@ -28,9 +28,18 @@ project (ffplay VERSION 1.0.0)
   if (CMAKE_HOST_SYSTEM_NAME STREQUAL Windows)
     target_compile_options (${PROJECT_NAME} PUBLIC /W4
                                                    /fp:fast
-                                                   #${BUILD_MSVC_COMPILE_OPTIONS}
+                                                   ${BUILD_MSVC_COMPILE_OPTIONS}
                                                    )
-
+    if (USE_AVX512)
+      message (STATUS "windows built with AVX X2 AVX512")
+      target_compile_options (${PROJECT_NAME} PUBLIC /arch:AVX512)
+    elseif (USE_AVX2)
+      message (STATUS "windows built with AVX AVX2")
+      target_compile_options (${PROJECT_NAME} PUBLIC /arch:AVX2)
+    else()
+      message (STATUS "windows built with AVX")
+      target_compile_options (${PROJECT_NAME} PUBLIC /arch:AVX)
+    endif()
   else (CMAKE_HOST_SYSTEM_NAME STREQUAL Linux)
     target_compile_definitions (${PROJECT_NAME} PUBLIC _LARGEFILE64_SOURCE _FILE_OFFSET_BITS=64)
     target_compile_options (${PROJECT_NAME} PUBLIC -Wall
@@ -45,7 +54,7 @@ project (ffplay VERSION 1.0.0)
                                                    -fno-exceptions
                                                    -march=native
                                                    -g
-                                                   #${BUILD_LINUX_COMPILE_OPTIONS}
+                                                   ${BUILD_LINUX_COMPILE_OPTIONS}
                                                    )
   endif()
 
