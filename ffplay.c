@@ -113,6 +113,7 @@ const int program_birth_year = 2003;
 #define FF_QUIT_EVENT (SDL_USEREVENT + 2)
 //}}}
 
+enum { AV_SYNC_AUDIO_MASTER, AV_SYNC_VIDEO_MASTER, AV_SYNC_EXTERNAL_CLOCK };
 //{{{
 typedef struct PacketList {
   AVPacket* pkt;
@@ -161,14 +162,6 @@ typedef struct Clock {
 typedef struct FrameData {
   int64_t pkt_pos;
   } FrameData;
-//}}}
-
-//{{{
-enum {
-  AV_SYNC_AUDIO_MASTER, /* default choice */
-  AV_SYNC_VIDEO_MASTER,
-  AV_SYNC_EXTERNAL_CLOCK, /* synchronize to an external clock */
-  };
 //}}}
 //{{{
 typedef struct Frame {
@@ -1522,13 +1515,11 @@ static double compute_target_delay (double delay, VideoState* is) {
 
   /* update delay to follow master synchronisation source */
   if (get_master_sync_type(is) != AV_SYNC_VIDEO_MASTER) {
-    /* if video is slave, we try to correct big delays by
-       duplicating or deleting a frame */
+    /* if video is slave, we try to correct big delays by duplicating or deleting a frame */
     diff = get_clock (&is->vidclk) - get_master_clock(is);
 
     /* skip or repeat frame. We take into account the
-       delay to compute the threshold. I still don't know
-       if it is the best guess */
+       delay to compute the threshold. I still don't know if it is the best guess */
     sync_threshold = FFMAX(AV_SYNC_THRESHOLD_MIN, FFMIN(AV_SYNC_THRESHOLD_MAX, delay));
     if (!isnan(diff) && fabs (diff) < is->max_frame_duration) {
       if (diff <= -sync_threshold)
@@ -1569,8 +1560,8 @@ static void update_video_pts (VideoState* is, double pts, int serial) {
   }
 //}}}
 //{{{
-/* pause or resume the video */
 static void stream_toggle_pause (VideoState* is) {
+/* pause or resume the video */
 
   if (is->paused) {
     is->frame_timer += av_gettime_relative() / 1000000.0 - is->vidclk.last_updated;
@@ -1585,13 +1576,13 @@ static void stream_toggle_pause (VideoState* is) {
   }
 //}}}
 //{{{
-/* called to display each frame */
 static void video_refresh (void* opaque, double* remaining_time) {
+/* called to display each frame */
 
   VideoState* is = opaque;
 
   if (!is->paused && get_master_sync_type(is) == AV_SYNC_EXTERNAL_CLOCK && is->realtime)
-    check_external_clock_speed(is);
+    check_external_clock_speed (is);
 
   double time;
   if (!display_disable && is->show_mode != SHOW_MODE_VIDEO && is->audio_st) {
