@@ -213,8 +213,8 @@ static inline int add_extended_prefix(wchar_t **ppath_w)
             errno = ENOMEM;
             return -1;
         }
-        wcscpy(temp_w, unc_prefix);
-        wcscat(temp_w, path_w + 2);
+        wcscpy (temp_w, unc_prefix);
+        wcscat (temp_w, path_w + 2);
     } else {
         // The length of extended_path_prefix is 4 plus 1 for terminating zeros
         temp_w = (wchar_t *)av_calloc(len + 4 + 1, sizeof(wchar_t));

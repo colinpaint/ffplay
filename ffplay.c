@@ -20,6 +20,10 @@
  */
 //}}}
 //{{{  includes
+#define _CRT_SECURE_NO_WARNINGS
+#define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING
+#define NOMINMAX
+
 #include "config.h"
 #include "config_components.h"
 
