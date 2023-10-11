@@ -3202,11 +3202,12 @@ static int readThread (void* arg) {
 // this thread gets the stream from the disk or the network
 
   VideoState* is = arg;
+  SDL_mutex* wait_mutex = SDL_CreateMutex();
+
   int i, ret;
   int st_index[AVMEDIA_TYPE_NB];
   int64_t stream_start_time;
   int pkt_in_play_range = 0;
-  SDL_mutex* wait_mutex = SDL_CreateMutex();
   int scan_all_pmts_set = 0;
   int64_t pkt_ts;
 
@@ -3274,7 +3275,7 @@ static int readThread (void* arg) {
     AVDictionary** opts;
     err = setup_find_stream_info_opts (ic, codec_opts, &opts);
     if (err < 0) {
-      //{{{  error
+      //{{{  error fail
       av_log (NULL, AV_LOG_ERROR, "Error setting up avformat_find_stream_info() options\n");
       ret = err;
       goto fail;
@@ -3286,7 +3287,7 @@ static int readThread (void* arg) {
       av_dict_free (&opts[i]);
     av_freep (&opts);
     if (err < 0) {
-      //{{{  error
+      //{{{  error fail
       av_log(NULL, AV_LOG_WARNING, "%s: could not find codec parameters\n", is->filename);
       ret = -1;
       goto fail;
@@ -3605,139 +3606,131 @@ fail:
 //}}}
 
 //{{{
-static void waitEvent (VideoState* is, SDL_Event* event) {
-
-  double remaining_time = 0.0;
-
-  SDL_PumpEvents();
-  while (!SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT)) {
-    if (!cursor_hidden && av_gettime_relative() - cursor_last_shown > CURSOR_HIDE_DELAY) {
-      SDL_ShowCursor (0);
-      cursor_hidden = 1;
-      }
-
-    if (remaining_time > 0.0)
-      av_usleep ((int64_t)(remaining_time * 1000000.0));
-    remaining_time = REFRESH_RATE;
-
-    if ((is->show_mode != SHOW_MODE_NONE) && (!is->paused || is->force_refresh))
-      videoRefresh (is, &remaining_time);
-
-    SDL_PumpEvents();
-    }
-  }
-//}}}
-//{{{
-static void eventLoop (VideoState* cur_stream) {
+static void eventLoop (VideoState* is) {
 // handle an event sent by the GUI
 
-
+  double remaining_time = 0.0;
   for (;;) {
+    SDL_PumpEvents();
     SDL_Event event;
-    waitEvent (cur_stream, &event);
+    while (!SDL_PeepEvents (&event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT)) {
+      if (!cursor_hidden && av_gettime_relative() - cursor_last_shown > CURSOR_HIDE_DELAY) {
+        SDL_ShowCursor (0);
+        cursor_hidden = 1;
+        }
 
-    double x,incr, pos, frac;
+      if (remaining_time > 0.0)
+        av_usleep ((int64_t)(remaining_time * 1000000.0));
+      remaining_time = REFRESH_RATE;
+
+      if ((is->show_mode != SHOW_MODE_NONE) &&
+          (!is->paused || is->force_refresh))
+        videoRefresh (is, &remaining_time);
+      SDL_PumpEvents();
+      }
+
+    double x, incr, pos, frac;
     switch (event.type) {
       //{{{
       case SDL_KEYDOWN:
         if (exit_on_keydown || event.key.keysym.sym == SDLK_ESCAPE || event.key.keysym.sym == SDLK_q) {
           //{{{  escape, exit
-          do_exit(cur_stream);
+          do_exit(is);
           break;
           }
           //}}}
 
         // If we don't yet have a window, skip all key events, because read_thread might still be initializing...
-        if (!cur_stream->width)
+        if (!is->width)
            continue;
 
         switch (event.key.keysym.sym) {
           //{{{
           case SDLK_f:
-            toggle_full_screen (cur_stream);
-            cur_stream->force_refresh = 1;
+            toggle_full_screen (is);
+            is->force_refresh = 1;
             break;
           //}}}
           case SDLK_p:
           //{{{
           case SDLK_SPACE:
-            toggle_pause (cur_stream);
+            toggle_pause (is);
             break;
           //}}}
           //{{{
           case SDLK_m:
-            toggle_mute (cur_stream);
+            toggle_mute (is);
             break;
           //}}}
           case SDLK_KP_MULTIPLY:
           //{{{
           case SDLK_0:
-            update_volume (cur_stream, 1, SDL_VOLUME_STEP);
+            update_volume (is, 1, SDL_VOLUME_STEP);
             break;
           //}}}
           case SDLK_KP_DIVIDE:
           //{{{
           case SDLK_9:
-            update_volume (cur_stream, -1, SDL_VOLUME_STEP);
+            update_volume (is, -1, SDL_VOLUME_STEP);
             break;
           //}}}
           //{{{
           case SDLK_s: // S: Step to next frame
-            step_to_next_frame (cur_stream);
+            step_to_next_frame (is);
             break;
           //}}}
           //{{{
           case SDLK_a: // cycle audio
-            stream_cycle_channel (cur_stream, AVMEDIA_TYPE_AUDIO);
+            stream_cycle_channel (is, AVMEDIA_TYPE_AUDIO);
              break;
           //}}}
           //{{{
           case SDLK_v: // cycle video
-            stream_cycle_channel (cur_stream, AVMEDIA_TYPE_VIDEO);
+            stream_cycle_channel (is, AVMEDIA_TYPE_VIDEO);
             break;
           //}}}
           //{{{
           case SDLK_c: // cycle stream
-            stream_cycle_channel (cur_stream, AVMEDIA_TYPE_VIDEO);
-            stream_cycle_channel (cur_stream, AVMEDIA_TYPE_AUDIO);
-            stream_cycle_channel (cur_stream, AVMEDIA_TYPE_SUBTITLE);
+            stream_cycle_channel (is, AVMEDIA_TYPE_VIDEO);
+            stream_cycle_channel (is, AVMEDIA_TYPE_AUDIO);
+            stream_cycle_channel (is, AVMEDIA_TYPE_SUBTITLE);
             break;
           //}}}
           //{{{
           case SDLK_t:
-            stream_cycle_channel (cur_stream, AVMEDIA_TYPE_SUBTITLE);
+            stream_cycle_channel (is, AVMEDIA_TYPE_SUBTITLE);
             break;
           //}}}
           //{{{
           case SDLK_w:
-            if (cur_stream->show_mode == SHOW_MODE_VIDEO && cur_stream->vfilter_idx < nb_vfilters - 1) {
-              if (++cur_stream->vfilter_idx >= nb_vfilters)
-                cur_stream->vfilter_idx = 0;
+            if (is->show_mode == SHOW_MODE_VIDEO && is->vfilter_idx < nb_vfilters - 1) {
+              if (++is->vfilter_idx >= nb_vfilters)
+                is->vfilter_idx = 0;
                 }
               else {
-                cur_stream->vfilter_idx = 0;
-                toggle_audio_display(cur_stream);
+                is->vfilter_idx = 0;
+                toggle_audio_display(is);
                 }
             break;
           //}}}
           //{{{
           case SDLK_PAGEUP:
-            if (cur_stream->ic->nb_chapters <= 1) {
+            if (is->ic->nb_chapters <= 1) {
               incr = 600.0;
               goto do_seek;
               }
 
-            seek_chapter (cur_stream, 1);
+            seek_chapter (is, 1);
             break;
           //}}}
           //{{{
           case SDLK_PAGEDOWN:
-            if (cur_stream->ic->nb_chapters <= 1) {
+            if (is->ic->nb_chapters <= 1) {
               incr = -600.0;
               goto do_seek;
               }
 
-            seek_chapter (cur_stream, -1);
+            seek_chapter (is, -1);
             break;
           //}}}
           //{{{
@@ -3762,27 +3755,27 @@ static void eventLoop (VideoState* cur_stream) {
           do_seek:
             if (seek_by_bytes) {
               pos = -1;
-              if (pos < 0 && cur_stream->video_stream >= 0)
-                pos = frame_queue_last_pos (&cur_stream->pictq);
-              if (pos < 0 && cur_stream->audio_stream >= 0)
-                pos = frame_queue_last_pos (&cur_stream->sampq);
+              if (pos < 0 && is->video_stream >= 0)
+                pos = frame_queue_last_pos (&is->pictq);
+              if (pos < 0 && is->audio_stream >= 0)
+                pos = frame_queue_last_pos (&is->sampq);
               if (pos < 0)
-                pos = avio_tell (cur_stream->ic->pb);
-              if (cur_stream->ic->bit_rate)
-                incr *= cur_stream->ic->bit_rate / 8.0;
+                pos = avio_tell (is->ic->pb);
+              if (is->ic->bit_rate)
+                incr *= is->ic->bit_rate / 8.0;
               else
                 incr *= 180000.0;
               pos += incr;
-              stream_seek (cur_stream, pos, incr, 1);
+              stream_seek (is, pos, incr, 1);
               }
             else {
-              pos = get_master_clock(cur_stream);
+              pos = get_master_clock(is);
               if (isnan(pos))
-                 pos = (double)cur_stream->seek_pos / AV_TIME_BASE;
+                 pos = (double)is->seek_pos / AV_TIME_BASE;
               pos += incr;
-              if (cur_stream->ic->start_time != AV_NOPTS_VALUE && pos < cur_stream->ic->start_time / (double)AV_TIME_BASE)
-                pos = cur_stream->ic->start_time / (double)AV_TIME_BASE;
-              stream_seek (cur_stream, (int64_t)(pos * AV_TIME_BASE), (int64_t)(incr * AV_TIME_BASE), 0);
+              if (is->ic->start_time != AV_NOPTS_VALUE && pos < is->ic->start_time / (double)AV_TIME_BASE)
+                pos = is->ic->start_time / (double)AV_TIME_BASE;
+              stream_seek (is, (int64_t)(pos * AV_TIME_BASE), (int64_t)(incr * AV_TIME_BASE), 0);
               }
 
             break;
@@ -3798,15 +3791,15 @@ static void eventLoop (VideoState* cur_stream) {
       //{{{
       case SDL_MOUSEBUTTONDOWN:
         if (exit_on_mousedown) {
-          do_exit (cur_stream);
+          do_exit (is);
           break;
           }
 
         if (event.button.button == SDL_BUTTON_LEFT) {
           static int64_t last_mouse_left_click = 0;
           if (av_gettime_relative() - last_mouse_left_click <= 500000) {
-            toggle_full_screen (cur_stream);
-            cur_stream->force_refresh = 1;
+            toggle_full_screen (is);
+            is->force_refresh = 1;
             last_mouse_left_click = 0;
             }
           else
@@ -3832,19 +3825,19 @@ static void eventLoop (VideoState* cur_stream) {
           x = event.motion.x;
           }
 
-        if (seek_by_bytes || cur_stream->ic->duration <= 0) {
-          uint64_t size =  avio_size(cur_stream->ic->pb);
-          stream_seek (cur_stream, size*x/cur_stream->width, 0, 1);
+        if (seek_by_bytes || is->ic->duration <= 0) {
+          uint64_t size =  avio_size(is->ic->pb);
+          stream_seek (is, size*x/is->width, 0, 1);
           }
         else {
           int64_t ts;
           int ns, hh, mm, ss;
           int tns, thh, tmm, tss;
-          tns  = cur_stream->ic->duration / 1000000LL;
+          tns  = is->ic->duration / 1000000LL;
           thh  = tns / 3600;
           tmm  = (tns % 3600) / 60;
           tss  = (tns % 60);
-          frac = x / cur_stream->width;
+          frac = x / is->width;
           ns   = frac * tns;
           hh   = ns / 3600;
           mm   = (ns % 3600) / 60;
@@ -3852,10 +3845,10 @@ static void eventLoop (VideoState* cur_stream) {
           av_log (NULL, AV_LOG_INFO,
                  "Seek to %2.0f%% (%2d:%02d:%02d) of total duration (%2d:%02d:%02d)       \n", frac*100,
                   hh, mm, ss, thh, tmm, tss);
-          ts = frac * cur_stream->ic->duration;
-          if (cur_stream->ic->start_time != AV_NOPTS_VALUE)
-            ts += cur_stream->ic->start_time;
-          stream_seek (cur_stream, ts, 0, 0);
+          ts = frac * is->ic->duration;
+          if (is->ic->start_time != AV_NOPTS_VALUE)
+            ts += is->ic->start_time;
+          stream_seek (is, ts, 0, 0);
           }
 
         break;
@@ -3865,15 +3858,15 @@ static void eventLoop (VideoState* cur_stream) {
 
         switch (event.window.event) {
           case SDL_WINDOWEVENT_SIZE_CHANGED:
-            screen_width  = cur_stream->width  = event.window.data1;
-            screen_height = cur_stream->height = event.window.data2;
-             if (cur_stream->vis_texture) {
-               SDL_DestroyTexture (cur_stream->vis_texture);
-                cur_stream->vis_texture = NULL;
+            screen_width  = is->width  = event.window.data1;
+            screen_height = is->height = event.window.data2;
+             if (is->vis_texture) {
+               SDL_DestroyTexture (is->vis_texture);
+                is->vis_texture = NULL;
                 }
 
           case SDL_WINDOWEVENT_EXPOSED:
-            cur_stream->force_refresh = 1;
+            is->force_refresh = 1;
             }
 
         break;
@@ -3881,7 +3874,7 @@ static void eventLoop (VideoState* cur_stream) {
       case SDL_QUIT:
       //{{{
       case FF_QUIT_EVENT:
-        do_exit (cur_stream);
+        do_exit (is);
         break;
       //}}}
       default:
