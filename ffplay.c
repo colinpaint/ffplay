@@ -2430,7 +2430,7 @@ static int get_video_frame (VideoState* is, AVFrame* frame) {
 
     frame->sample_aspect_ratio = av_guess_sample_aspect_ratio (is->ic, is->video_st, frame);
 
-    if (framedrop>0 || (framedrop && get_master_sync_type (is) != AV_SYNC_VIDEO_MASTER)) {
+    if (framedrop >0  || (framedrop && get_master_sync_type (is) != AV_SYNC_VIDEO_MASTER)) {
       if (frame->pts != AV_NOPTS_VALUE) {
         double diff = dpts - get_master_clock (is);
         if (!isnan (diff) && fabs (diff) < AV_NOSYNC_THRESHOLD &&
@@ -2454,12 +2454,8 @@ static int videoThread (void* arg) {
   VideoState* is = arg;
   AVFrame* frame = av_frame_alloc();
 
-  double pts;
-  double duration;
-  int ret;
-
   AVRational tb = is->video_st->time_base;
-  AVRational frame_rate = av_guess_frame_rate(is->ic, is->video_st, NULL);
+  AVRational frame_rate = av_guess_frame_rate (is->ic, is->video_st, NULL);
 
   AVFilterGraph* graph = NULL;
   AVFilterContext* filt_out = NULL;
@@ -2474,6 +2470,9 @@ static int videoThread (void* arg) {
   if (!frame)
     return AVERROR(ENOMEM);
 
+  double pts;
+  double duration;
+  int ret;
   for (;;) {
     //{{{  frame
     ret = get_video_frame (is, frame);
@@ -2644,22 +2643,21 @@ end:
 //{{{
 static int audioThread (void* arg) {
 
-  int last_serial = -1;
-  int reconfigure;
-  AVRational tb;
-  int ret = 0;
-
   VideoState* is = arg;
 
   AVFrame* frame = av_frame_alloc();
   if (!frame)
     return AVERROR(ENOMEM);
 
+  int ret = 0;
   do {
     int got_frame;
     if ((got_frame = decodeFrame (&is->auddec, frame, NULL)) < 0)
       goto the_end;
 
+    int last_serial = -1;
+    int reconfigure;
+    AVRational tb;
     if (got_frame) {
       //{{{  got frame
       tb = (AVRational){1, frame->sample_rate};
