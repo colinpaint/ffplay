@@ -2299,7 +2299,6 @@ static int configure_video_filters (AVFilterGraph* graph, VideoState* is,
 
   char sws_flags_str[512] = "";
   char buffersrc_args[256];
-  int ret;
 
   AVFilterContext* filt_src = NULL;
   AVFilterContext* filt_out = NULL;
@@ -2308,12 +2307,9 @@ static int configure_video_filters (AVFilterGraph* graph, VideoState* is,
   AVCodecParameters* codecpar = is->video_st->codecpar;
   AVRational fr = av_guess_frame_rate (is->ic, is->video_st, NULL);
 
-  const AVDictionaryEntry* e = NULL;
   int nb_pix_fmts = 0;
-  int i, j;
-
-  for (i = 0; i < renderer_info.num_texture_formats; i++) {
-    for (j = 0; j < FF_ARRAY_ELEMS(sdl_texture_format_map) - 1; j++) {
+  for (int i = 0; i < renderer_info.num_texture_formats; i++) {
+    for (int j = 0; j < FF_ARRAY_ELEMS(sdl_texture_format_map) - 1; j++) {
       if (renderer_info.texture_formats[i] == sdl_texture_format_map[j].texture_fmt) {
         pix_fmts[nb_pix_fmts++] = sdl_texture_format_map[j].format;
         break;
@@ -2322,6 +2318,7 @@ static int configure_video_filters (AVFilterGraph* graph, VideoState* is,
     }
   pix_fmts[nb_pix_fmts] = AV_PIX_FMT_NONE;
 
+  const AVDictionaryEntry* e = NULL;
   while ((e = av_dict_iterate (sws_dict, e))) {
     if (!strcmp(e->key, "sws_flags"))
       av_strlcatf (sws_flags_str, sizeof(sws_flags_str), "%s=%s:", "flags", e->value);
@@ -2342,6 +2339,7 @@ static int configure_video_filters (AVFilterGraph* graph, VideoState* is,
   if (fr.num && fr.den)
     av_strlcatf (buffersrc_args, sizeof(buffersrc_args), ":frame_rate=%d/%d", fr.num, fr.den);
 
+  int ret;
   if ((ret = avfilter_graph_create_filter (&filt_src, avfilter_get_by_name ("buffer"),
                                            "ffplay_buffer", buffersrc_args, NULL, graph)) < 0)
     goto fail;
