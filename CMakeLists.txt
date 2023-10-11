@@ -13,6 +13,8 @@ elseif (CMAKE_HOST_SYSTEM_NAME STREQUAL Linux)
 endif()
 #
 
+set (SDL_TEST OFF CACHE BOOL "" FORCE)
+set (SDL_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory (SDL2)
 
 project (ffplay VERSION 1.0.0)
