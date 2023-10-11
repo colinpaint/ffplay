@@ -2179,20 +2179,20 @@ fail:
   }
 //}}}
 //{{{
-static int decodeFrame (Decoder* d, AVFrame* frame, AVSubtitle *sub) {
+static int decodeFrame (Decoder* decoder, AVFrame* frame, AVSubtitle *sub) {
 
   int ret = AVERROR(EAGAIN);
 
   for (;;) {
-    if (d->queue->serial == d->pkt_serial) {
+    if (decoder->queue->serial == decoder->pkt_serial) {
       do {
-        if (d->queue->abort_request)
+        if (decoder->queue->abort_request)
           return -1;
 
-        switch (d->avctx->codec_type) {
+        switch (decoder->avctx->codec_type) {
           //{{{
           case AVMEDIA_TYPE_VIDEO:
-            ret = avcodec_receive_frame(d->avctx, frame);
+            ret = avcodec_receive_frame(decoder->avctx, frame);
             if (ret >= 0) {
               if (decoder_reorder_pts == -1)
                 frame->pts = frame->best_effort_timestamp;
@@ -2203,17 +2203,17 @@ static int decodeFrame (Decoder* d, AVFrame* frame, AVSubtitle *sub) {
           //}}}
           //{{{
           case AVMEDIA_TYPE_AUDIO:
-            ret = avcodec_receive_frame (d->avctx, frame);
+            ret = avcodec_receive_frame (decoder->avctx, frame);
             if (ret >= 0) {
               AVRational tb = (AVRational){1, frame->sample_rate};
               if (frame->pts != AV_NOPTS_VALUE)
-                frame->pts = av_rescale_q (frame->pts, d->avctx->pkt_timebase, tb);
-              else if (d->next_pts != AV_NOPTS_VALUE)
-                frame->pts = av_rescale_q (d->next_pts, d->next_pts_tb, tb);
+                frame->pts = av_rescale_q (frame->pts, decoder->avctx->pkt_timebase, tb);
+              else if (decoder->next_pts != AV_NOPTS_VALUE)
+                frame->pts = av_rescale_q (decoder->next_pts, decoder->next_pts_tb, tb);
 
               if (frame->pts != AV_NOPTS_VALUE) {
-                d->next_pts = frame->pts + frame->nb_samples;
-                d->next_pts_tb = tb;
+                decoder->next_pts = frame->pts + frame->nb_samples;
+                decoder->next_pts_tb = tb;
                 }
               }
             break;
@@ -2221,8 +2221,8 @@ static int decodeFrame (Decoder* d, AVFrame* frame, AVSubtitle *sub) {
           }
         if (ret == AVERROR_EOF) {
           //{{{  end of file, return
-          d->finished = d->pkt_serial;
-          avcodec_flush_buffers (d->avctx);
+          decoder->finished = decoder->pkt_serial;
+          avcodec_flush_buffers (decoder->avctx);
           return 0;
           }
           //}}}
@@ -2232,59 +2232,59 @@ static int decodeFrame (Decoder* d, AVFrame* frame, AVSubtitle *sub) {
       }
 
     do {
-      if (d->queue->nb_packets == 0)
-        SDL_CondSignal (d->empty_queue_cond);
-      if (d->packet_pending)
-        d->packet_pending = 0;
+      if (decoder->queue->nb_packets == 0)
+        SDL_CondSignal (decoder->empty_queue_cond);
+      if (decoder->packet_pending)
+        decoder->packet_pending = 0;
       else {
-        int old_serial = d->pkt_serial;
-        if (packet_queue_get (d->queue, d->pkt, 1, &d->pkt_serial) < 0)
+        int old_serial = decoder->pkt_serial;
+        if (packet_queue_get (decoder->queue, decoder->pkt, 1, &decoder->pkt_serial) < 0)
           return -1;
-        if (old_serial != d->pkt_serial) {
-          avcodec_flush_buffers (d->avctx);
-          d->finished = 0;
-          d->next_pts = d->start_pts;
-          d->next_pts_tb = d->start_pts_tb;
+        if (old_serial != decoder->pkt_serial) {
+          avcodec_flush_buffers (decoder->avctx);
+          decoder->finished = 0;
+          decoder->next_pts = decoder->start_pts;
+          decoder->next_pts_tb = decoder->start_pts_tb;
           }
         }
-      if (d->queue->serial == d->pkt_serial)
+      if (decoder->queue->serial == decoder->pkt_serial)
         break;
 
-      av_packet_unref (d->pkt);
+      av_packet_unref (decoder->pkt);
       } while (1);
 
-    if (d->avctx->codec_type == AVMEDIA_TYPE_SUBTITLE) {
+    if (decoder->avctx->codec_type == AVMEDIA_TYPE_SUBTITLE) {
       //{{{  subtitle
       int got_frame = 0;
-      ret = avcodec_decode_subtitle2 (d->avctx, sub, &got_frame, d->pkt);
+      ret = avcodec_decode_subtitle2 (decoder->avctx, sub, &got_frame, decoder->pkt);
       if (ret < 0)
         ret = AVERROR(EAGAIN);
       else {
-        if (got_frame && !d->pkt->data)
-          d->packet_pending = 1;
-        ret = got_frame ? 0 : (d->pkt->data ? AVERROR(EAGAIN) : AVERROR_EOF);
+        if (got_frame && !decoder->pkt->data)
+          decoder->packet_pending = 1;
+        ret = got_frame ? 0 : (decoder->pkt->data ? AVERROR(EAGAIN) : AVERROR_EOF);
         }
-      av_packet_unref (d->pkt);
+      av_packet_unref (decoder->pkt);
       }
       //}}}
     else {
       //{{{  audio, video
-      if (d->pkt->buf && !d->pkt->opaque_ref) {
+      if (decoder->pkt->buf && !decoder->pkt->opaque_ref) {
         FrameData *fd;
 
-        d->pkt->opaque_ref = av_buffer_allocz (sizeof(*fd));
-        if (!d->pkt->opaque_ref)
+        decoder->pkt->opaque_ref = av_buffer_allocz (sizeof(*fd));
+        if (!decoder->pkt->opaque_ref)
           return AVERROR(ENOMEM);
-        fd = (FrameData*)d->pkt->opaque_ref->data;
-        fd->pkt_pos = d->pkt->pos;
+        fd = (FrameData*)decoder->pkt->opaque_ref->data;
+        fd->pkt_pos = decoder->pkt->pos;
         }
 
-      if (avcodec_send_packet (d->avctx, d->pkt) == AVERROR(EAGAIN)) {
-        av_log (d->avctx, AV_LOG_ERROR, "Receive_frame and send_packet both returned EAGAIN, which is an API violation.\n");
-        d->packet_pending = 1;
+      if (avcodec_send_packet (decoder->avctx, decoder->pkt) == AVERROR(EAGAIN)) {
+        av_log (decoder->avctx, AV_LOG_ERROR, "Receive_frame and send_packet both returned EAGAIN, which is an API violation.\n");
+        decoder->packet_pending = 1;
         }
       else
-        av_packet_unref (d->pkt);
+        av_packet_unref (decoder->pkt);
       }
       //}}}
     }
