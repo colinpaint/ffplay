@@ -64,6 +64,7 @@ project (ffplay VERSION 1.0.0)
                                                    -fno-exceptions
                                                    -march=native
                                                    -g
+                                                   -dl
                                                    ${BUILD_LINUX_COMPILE_OPTIONS}
                                                    )
     # FFmpeg
@@ -78,7 +79,7 @@ project (ffplay VERSION 1.0.0)
     if (CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
       message (STATUS "using prebuilt linux ARM SDL lib/arm64")
       target_link_directories (${PROJECT_NAME} PUBLIC lib/arm64)
-      target_link_libraries (${PROJECT_NAME} PUBLIC dl libSDL2.a)
+      target_link_libraries (${PROJECT_NAME} PUBLIC libSDL2.a)
     else()
       message (STATUS "using prebuilt linux 64 SDL lib/linux64")
       target_link_directories (${PROJECT_NAME} PUBLIC lib/linux64)
