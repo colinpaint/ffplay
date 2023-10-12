@@ -382,7 +382,7 @@ static int screen_height = 0;
 static int screen_left = SDL_WINDOWPOS_CENTERED;
 static int screen_top = SDL_WINDOWPOS_CENTERED;
 
-static int audio_disable;
+static int gAudioDisable;
 static int video_disable;
 static int subtitle_disable;
 
@@ -437,7 +437,7 @@ static SDL_RendererInfo renderer_info = {0};
 
 static SDL_AudioDeviceID audio_dev;
 
-static int is_full_screen = 0;
+static int gIsFullScreen = 0;
 static int64_t audio_callback_time = 0;
 //}}}
 
@@ -1413,7 +1413,7 @@ static int videoOpen (sVideoState* videoState) {
 
   SDL_SetWindowSize (window, width, height);
   SDL_SetWindowPosition (window, screen_left, screen_top);
-  if (is_full_screen)
+  if (gIsFullScreen)
     SDL_SetWindowFullscreen (window, SDL_WINDOW_FULLSCREEN_DESKTOP);
   SDL_ShowWindow (window);
 
@@ -2273,14 +2273,14 @@ static int decodeFrame (sDecoder* decoder, AVFrame* frame, AVSubtitle *sub) {
 
     if (decoder->avctx->codec_type == AVMEDIA_TYPE_SUBTITLE) {
       //{{{  subtitle
-      int got_frame = 0;
-      ret = avcodec_decode_subtitle2 (decoder->avctx, sub, &got_frame, decoder->pkt);
+      int gotFrame = 0;
+      ret = avcodec_decode_subtitle2 (decoder->avctx, sub, &gotFrame, decoder->pkt);
       if (ret < 0)
         ret = AVERROR(EAGAIN);
       else {
-        if (got_frame && !decoder->pkt->data)
+        if (gotFrame && !decoder->pkt->data)
           decoder->packet_pending = 1;
-        ret = got_frame ? 0 : (decoder->pkt->data ? AVERROR(EAGAIN) : AVERROR_EOF);
+        ret = gotFrame ? 0 : (decoder->pkt->data ? AVERROR(EAGAIN) : AVERROR_EOF);
         }
       av_packet_unref (decoder->pkt);
       }
@@ -2669,24 +2669,22 @@ static int audioThread (void* arg) {
 
   int ret = 0;
   do {
-    int got_frame;
-    if ((got_frame = decodeFrame (&videoState->auddec, frame, NULL)) < 0)
+    int gotFrame;
+    if ((gotFrame = decodeFrame (&videoState->auddec, frame, NULL)) < 0)
       goto the_end;
 
     int last_serial = -1;
-    int reconfigure;
-    AVRational tb;
-    if (got_frame) {
+    if (gotFrame) {
       //{{{  got frame
-      tb = (AVRational){1, frame->sample_rate};
+      AVRational tb = (AVRational){1, frame->sample_rate};
 
-      reconfigure = compareAudioFormats (videoState->audio_filter_src.fmt,
-                                         videoState->audio_filter_src.ch_layout.nb_channels,
-                                         frame->format,
-                                         frame->ch_layout.nb_channels)
-                    || av_channel_layout_compare (&videoState->audio_filter_src.ch_layout, &frame->ch_layout)
-                    || videoState->audio_filter_src.freq != frame->sample_rate
-                    || videoState->auddec.pkt_serial != last_serial;
+      int reconfigure = compareAudioFormats (videoState->audio_filter_src.fmt,
+                                             videoState->audio_filter_src.ch_layout.nb_channels,
+                                             frame->format,
+                                             frame->ch_layout.nb_channels)
+                       || av_channel_layout_compare (&videoState->audio_filter_src.ch_layout, &frame->ch_layout)
+                       || videoState->audio_filter_src.freq != frame->sample_rate
+                       || videoState->auddec.pkt_serial != last_serial;
       if (reconfigure) {
         //{{{  reconfigure audio
         char buf1[1024], buf2[1024];
@@ -2755,29 +2753,30 @@ static int subtitleThread (void* arg) {
   sVideoState* videoState = arg;
 
   for (;;) {
-    sFrame* sp;
-    if (!(sp = frame_queue_peek_writable (&videoState->subpq)))
+    sFrame* subtitleFrame = frame_queue_peek_writable(&videoState->subpq);
+    if (!subtitleFrame)
       return 0;
 
-    int got_subtitle;
-    if ((got_subtitle = decodeFrame (&videoState->subdec, NULL, &sp->sub)) < 0)
+    //int gotSubtitle = = decodeFrame (&videoState->subdec, NULL, &subtitleFrame->sub)) < 0;
+    int gotSubtitle;
+    if ((gotSubtitle = decodeFrame (&videoState->subdec, NULL, &subtitleFrame->sub)) < 0)
       break;
 
     double pts = 0;
-    if (got_subtitle && sp->sub.format == 0) {
-      if (sp->sub.pts != AV_NOPTS_VALUE)
-        pts = sp->sub.pts / (double)AV_TIME_BASE;
-      sp->pts = pts;
-      sp->serial = videoState->subdec.pkt_serial;
-      sp->width = videoState->subdec.avctx->width;
-      sp->height = videoState->subdec.avctx->height;
-      sp->uploaded = 0;
+    if (gotSubtitle && subtitleFrame->sub.format == 0) {
+      if (subtitleFrame->sub.pts != AV_NOPTS_VALUE)
+        pts = subtitleFrame->sub.pts / (double)AV_TIME_BASE;
+      subtitleFrame->pts = pts;
+      subtitleFrame->serial = videoState->subdec.pkt_serial;
+      subtitleFrame->width = videoState->subdec.avctx->width;
+      subtitleFrame->height = videoState->subdec.avctx->height;
+      subtitleFrame->uploaded = 0;
 
       // now we can update the picture count
       frame_queue_push (&videoState->subpq);
       }
-    else if (got_subtitle)
-      avsubtitle_free (&sp->sub);
+    else if (gotSubtitle)
+      avsubtitle_free (&subtitleFrame->sub);
     }
 
   return 0;
@@ -2899,8 +2898,8 @@ static void updateVolume (sVideoState* videoState, int sign, double step) {
 //{{{
 static void toggleFullScreen (sVideoState* videoState) {
 
-  is_full_screen = !is_full_screen;
-  SDL_SetWindowFullscreen (window, is_full_screen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+  gIsFullScreen = !gIsFullScreen;
+  SDL_SetWindowFullscreen (window, gIsFullScreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
   }
 //}}}
 //{{{
@@ -3375,7 +3374,7 @@ static int readThread (void* arg) {
   if (!video_disable)
     st_index[AVMEDIA_TYPE_VIDEO] = av_find_best_stream (ic, AVMEDIA_TYPE_VIDEO,
                                                         st_index[AVMEDIA_TYPE_VIDEO], -1, NULL, 0);
-  if (!audio_disable)
+  if (!gAudioDisable)
     st_index[AVMEDIA_TYPE_AUDIO] = av_find_best_stream (ic, AVMEDIA_TYPE_AUDIO,
                                                         st_index[AVMEDIA_TYPE_AUDIO],
                                                         st_index[AVMEDIA_TYPE_VIDEO], NULL, 0);
@@ -4003,8 +4002,8 @@ static const OptionDef options[] = {
   CMDUTILS_COMMON_OPTIONS
   { "x", HAS_ARG, { .func_arg = opt_width }, "force displayed width", "width" },
   { "y", HAS_ARG, { .func_arg = opt_height }, "force displayed height", "height" },
-  { "fs", OPT_BOOL, { &is_full_screen }, "force full screen" },
-  { "an", OPT_BOOL, { &audio_disable }, "disable audio" },
+  { "fs", OPT_BOOL, { &gIsFullScreen }, "force full screen" },
+  { "an", OPT_BOOL, { &gAudioDisable }, "disable audio" },
   { "vn", OPT_BOOL, { &video_disable }, "disable video" },
   { "sn", OPT_BOOL, { &subtitle_disable }, "disable subtitling" },
   { "ast", OPT_STRING | HAS_ARG | OPT_EXPERT, { &wanted_stream_spec[AVMEDIA_TYPE_AUDIO] }, "select desired audio stream", "stream_specifier" },
@@ -4136,7 +4135,7 @@ int main (int argc, char** argv) {
     video_disable = 1;
   int flags = SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER;
 
-  if (audio_disable)
+  if (gAudioDisable)
     flags &= ~SDL_INIT_AUDIO;
   else {
     //{{{  alsa buffer underflow
