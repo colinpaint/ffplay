@@ -74,7 +74,7 @@ project (ffplay VERSION 1.0.0)
     target_link_libraries (${PROJECT_NAME} PUBLIC PkgConfig::FFMPEG)
 
     # SDL2
-    target_include_directories (${PROJECT_NAME} PUBLIC SDL2/include)
+    target_include_directories (${PROJECT_NAME} PUBLIC include/SDL2/include)
     if (CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
       message (STATUS "using prebuilt linux ARM SDL lib/arm64")
       #target_link_options (${PROJECT_NAME} PUBLIC -ldl)
