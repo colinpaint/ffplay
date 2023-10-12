@@ -74,6 +74,12 @@ project (ffplay VERSION 1.0.0)
 
     # SDL2
     target_include_directories (${PROJECT_NAME} PUBLIC SDL2/include)
-    target_link_directories (${PROJECT_NAME} PUBLIC lib/linux64)
+    if (CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+      message (STATUS "using prebuilt linux ARM SDL"lib/arm64/libSDL2.lib")
+      target_link_directories (${PROJECT_NAME} PUBLIC ../lib/arm64)
+    else()
+      message (STATUS "using prebuilt linux 64 SDL"lib/linux64/libSDL2.lib")
+      target_link_directories (${PROJECT_NAME} PUBLIC lib/linux64)
+    endif()
     target_link_libraries (${PROJECT_NAME} PUBLIC libSDL2.a)
   endif()

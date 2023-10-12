@@ -21,6 +21,10 @@
  */
 //}}}
 //{{{  includes
+#define _CRT_SECURE_NO_WARNINGS
+#define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING
+#define NOMINMAX
+
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -74,6 +78,9 @@ void uninit_opts() {
 //}}}
 //{{{
 void log_callback_help (void* ptr, int level, const char* fmt, va_list vl) {
+  (void)ptr;
+  (void)level;
+
   vfprintf(stdout, fmt, vl);
   }
 //}}}
@@ -236,10 +243,12 @@ static const OptionDef* find_option (const OptionDef* po, const char* name) {
   //}}}
 #else
   //{{{
-  static inline void prepare_app_arguments (int* argc_ptr, char*** argv_ptr)
-  {
-      /* nothing to do */
-  }
+  static inline void prepare_app_arguments (int* argc_ptr, char*** argv_ptr)  {
+    (void)argc_ptr;
+    (void)argv_ptr;
+
+    /* nothing to do */
+    }
   //}}}
 #endif
 
@@ -283,13 +292,13 @@ static int write_option (void* optctx, const OptionDef* po, const char* opt, con
     if (ret < 0)
       return ret;
 
-    *(int *)dst = num;
+    *(int*)dst = (int)(num);
     }
    else if (po->flags & OPT_INT64) {
-    ret = parse_number(opt, arg, OPT_INT64, INT64_MIN, INT64_MAX, &num);
+    ret = parse_number(opt, arg, OPT_INT64, INT64_MIN, (double)(INT64_MAX), &num);
     if (ret < 0)
       return ret;
-    *(int64_t *)dst = num;
+    *(int64_t*)dst = (int64_t)(num);
     }
   else if (po->flags & OPT_TIME) {
     ret = av_parse_time(dst, arg, 1);
@@ -299,23 +308,23 @@ static int write_option (void* optctx, const OptionDef* po, const char* opt, con
       }
     }
   else if (po->flags & OPT_FLOAT) {
-    ret = parse_number(opt, arg, OPT_FLOAT, -INFINITY, INFINITY, &num);
+    ret = parse_number (opt, arg, OPT_FLOAT, -INFINITY, INFINITY, &num);
     if (ret < 0)
       return ret;
-    *(float *)dst = num;
+    *(float*)dst = (float)(num);
     }
   else if (po->flags & OPT_DOUBLE) {
-    ret = parse_number(opt, arg, OPT_DOUBLE, -INFINITY, INFINITY, &num);
+    ret = parse_number (opt, arg, OPT_DOUBLE, -INFINITY, INFINITY, &num);
     if (ret < 0)
       return ret;
     *(double *)dst = num;
     }
   else if (po->u.func_arg) {
-    int ret = po->u.func_arg(optctx, opt, arg);
+    ret = po->u.func_arg (optctx, opt, arg);
     if (ret < 0) {
-      av_log(NULL, AV_LOG_ERROR,
-             "Failed to set value '%s' for option '%s': %s\n",
-             arg, opt, av_err2str(ret));
+      av_log (NULL, AV_LOG_ERROR,
+              "Failed to set value '%s' for option '%s': %s\n",
+              arg, opt, av_err2str (ret));
         return ret;
         }
       }
@@ -466,29 +475,30 @@ int locate_option (int argc, char** argv, const OptionDef* options,
 //}}}
 
 //{{{
-static void dump_argument (FILE* report_file, const char* a)
-{
-    const unsigned char *p;
+static void dump_argument (FILE* report_file, const char* a) {
 
-    for (p = a; *p; p++)
-        if (!((*p >= '+' && *p <= ':') || (*p >= '@' && *p <= 'Z') ||
-              *p == '_' || (*p >= 'a' && *p <= 'z')))
-            break;
-    if (!*p) {
-        fputs(a, report_file);
-        return;
+  const char* p;
+  for (p = a; *p; p++)
+    if (!((*p >= '+' && *p <= ':') || (*p >= '@' && *p <= 'Z') ||
+        *p == '_' || (*p >= 'a' && *p <= 'z')))
+      break;
+    
+  if (!*p) {
+    fputs(a, report_file);
+    return;
     }
-    fputc('"', report_file);
-    for (p = a; *p; p++) {
-        if (*p == '\\' || *p == '"' || *p == '$' || *p == '`')
-            fprintf(report_file, "\\%c", *p);
-        else if (*p < ' ' || *p > '~')
-            fprintf(report_file, "\\x%02x", *p);
-        else
-            fputc(*p, report_file);
+  fputc('"', report_file);
+    
+  for (p = a; *p; p++) {
+    if (*p == '\\' || *p == '"' || *p == '$' || *p == '`')
+      fprintf(report_file, "\\%c", *p);
+    else if (*p < ' ' || *p > '~')
+      fprintf(report_file, "\\x%02x", *p);
+    else
+      fputc(*p, report_file);
     }
-    fputc('"', report_file);
-}
+  fputc('"', report_file);
+  }
 //}}}
 //{{{
 static void check_options (const OptionDef* po)
@@ -548,6 +558,8 @@ static const AVOption* opt_find (void* obj, const char* name, const char *unit,
 //{{{
 int opt_default (void* optctx, const char* opt, const char *arg)
 {
+    (void)optctx;
+
     const AVOption *o;
     int consumed = 0;
     char opt_stripped[128];
@@ -574,16 +586,14 @@ int opt_default (void* optctx, const char* opt, const char *arg)
         av_dict_set(&codec_opts, opt, arg, FLAGS);
         consumed = 1;
     }
-    if ((o = opt_find(&fc, opt, NULL, 0,
-                         AV_OPT_SEARCH_CHILDREN | AV_OPT_SEARCH_FAKE_OBJ))) {
+    if ((o = opt_find(&fc, opt, NULL, 0, AV_OPT_SEARCH_CHILDREN | AV_OPT_SEARCH_FAKE_OBJ))) {
         av_dict_set(&format_opts, opt, arg, FLAGS);
         if (consumed)
             av_log(NULL, AV_LOG_VERBOSE, "Routing option %s to both codec and muxer layer\n", opt);
         consumed = 1;
     }
 #if CONFIG_SWSCALE
-    if (!consumed && (o = opt_find(&sc, opt, NULL, 0,
-                         AV_OPT_SEARCH_CHILDREN | AV_OPT_SEARCH_FAKE_OBJ))) {
+    if (!consumed && (o = opt_find(&sc, opt, NULL, 0, AV_OPT_SEARCH_CHILDREN | AV_OPT_SEARCH_FAKE_OBJ))) {
         if (!strcmp(opt, "srcw") || !strcmp(opt, "srch") ||
             !strcmp(opt, "dstw") || !strcmp(opt, "dsth") ||
             !strcmp(opt, "src_format") || !strcmp(opt, "dst_format")) {
@@ -601,8 +611,7 @@ int opt_default (void* optctx, const char* opt, const char *arg)
     }
 #endif
 #if CONFIG_SWRESAMPLE
-    if (!consumed && (o=opt_find(&swr_class, opt, NULL, 0,
-                                    AV_OPT_SEARCH_CHILDREN | AV_OPT_SEARCH_FAKE_OBJ))) {
+    if (!consumed && (o=opt_find(&swr_class, opt, NULL, 0, AV_OPT_SEARCH_CHILDREN | AV_OPT_SEARCH_FAKE_OBJ))) {
         av_dict_set(&swr_opts, opt, arg, FLAGS);
         consumed = 1;
     }
@@ -763,7 +772,6 @@ int split_commandline (OptionParseContext* octx, int argc, char* argv[],
     while (optindex < argc) {
         const char *opt = argv[optindex++], *arg;
         const OptionDef *po;
-        int ret;
 
         av_log(NULL, AV_LOG_DEBUG, "Reading option '%s' ...", opt);
 
@@ -840,8 +848,7 @@ do {                                                                           \
         }
 
         /* boolean -nofoo options */
-        if (opt[0] == 'n' && opt[1] == 'o' &&
-            (po = find_option(options, opt + 2)) &&
+        if (opt[0] == 'n' && opt[1] == 'o' && (po = find_option(options, opt + 2)) &&
             po->name && po->flags & OPT_BOOL) {
             ret = add_opt(octx, po, opt, "0");
             if (ret < 0)
@@ -1016,14 +1023,10 @@ int filter_codec_opts (const AVDictionary* opts, enum AVCodecID codec_id,
 
         if (av_opt_find(&cc, t->key, NULL, flags, AV_OPT_SEARCH_FAKE_OBJ) ||
             !codec ||
-            ((priv_class = codec->priv_class) &&
-             av_opt_find(&priv_class, t->key, NULL, flags,
-                         AV_OPT_SEARCH_FAKE_OBJ)))
-            av_dict_set(&ret, t->key, t->value, 0);
-        else if (t->key[0] == prefix &&
-                 av_opt_find(&cc, t->key + 1, NULL, flags,
-                             AV_OPT_SEARCH_FAKE_OBJ))
-            av_dict_set(&ret, t->key + 1, t->value, 0);
+            ((priv_class = codec->priv_class) && av_opt_find(&priv_class, t->key, NULL, flags, AV_OPT_SEARCH_FAKE_OBJ)))
+          av_dict_set(&ret, t->key, t->value, 0);
+        else if (t->key[0] == prefix && av_opt_find(&cc, t->key + 1, NULL, flags, AV_OPT_SEARCH_FAKE_OBJ))
+          av_dict_set(&ret, t->key + 1, t->value, 0);
 
         if (p)
             *p = ':';
@@ -1035,8 +1038,8 @@ int filter_codec_opts (const AVDictionary* opts, enum AVCodecID codec_id,
 //}}}
 //{{{
 int setup_find_stream_info_opts (AVFormatContext* s,
-                                AVDictionary *codec_opts,
-                                AVDictionary ***dst)
+                                 AVDictionary* codec_opts,
+                                 AVDictionary ***dst)
 {
     int ret;
     AVDictionary **opts;
@@ -1092,7 +1095,7 @@ void* allocate_array_elem (void* ptr, size_t elem_size, int* nb_elems)
 
     if (!(new_elem = av_mallocz(elem_size)) ||
         av_dynarray_add_nofree(ptr, nb_elems, new_elem) < 0)
-        return NULL;
+      return NULL;
     return new_elem;
 }
 //}}}
