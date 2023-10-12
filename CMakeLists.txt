@@ -59,7 +59,7 @@ project (ffplay VERSION 1.0.0)
   endif()
 
   if (CMAKE_HOST_SYSTEM_NAME STREQUAL Windows)
-    message (STATUS "using prebuilt windows64 SDL"lib/windows64")
+    message (STATUS "using prebuilt windows64 SDL lib/windows64")
     target_include_directories (${PROJECT_NAME} PUBLIC include/ffmpeg)
     target_link_directories (${PROJECT_NAME} PUBLIC lib/windows64)
     target_link_libraries (${PROJECT_NAME} PUBLIC SDL2
@@ -84,4 +84,5 @@ project (ffplay VERSION 1.0.0)
       target_link_directories (${PROJECT_NAME} PUBLIC lib/linux64)
       target_link_libraries (${PROJECT_NAME} PUBLIC libSDL2.a)
     endif()
+
   endif()
