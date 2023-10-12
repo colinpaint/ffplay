@@ -829,13 +829,6 @@ static double get_master_clock (sVideoState* videoState) {
 //}}}
 
 //{{{
-static void set_clock (sClock* clock, double pts, int serial) {
-
-  double time = av_gettime_relative() / 1000000.0;
-  set_clock_at (clock, pts, serial, time);
-  }
-//}}}
-//{{{
 static void set_clock_at (sClock* clock, double pts, int serial, double time) {
 
   clock->pts = pts;
@@ -845,12 +838,19 @@ static void set_clock_at (sClock* clock, double pts, int serial, double time) {
   }
 //}}}
 //{{{
+static void set_clock (sClock* clock, double pts, int serial) {
+
+  double time = av_gettime_relative() / 1000000.0;
+  set_clock_at (clock, pts, serial, time);
+  }
+//}}}
+//{{{
 static void sync_clock_to_slave (sClock* clock, sClock* slave) {
 
   double clockValue = get_clock (clock);
   double slaveClockValue = get_clock (slave);
 
-  if (!isnan (slaveClockValue) && 
+  if (!isnan (slaveClockValue) &&
       (isnan (clockValue) ||
       fabs(clockValue - slaveClockValue) > AV_NOSYNC_THRESHOLD))
     set_clock (clock, slaveClockValue, slave->serial);
