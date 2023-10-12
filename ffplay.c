@@ -342,7 +342,7 @@ typedef struct sVideoState {
 //}}}
 
 //{{{
-const struct TextureFormatEntry {
+const struct sTextureFormatEntry {
   enum AVPixelFormat format;
   int texture_fmt;
   }
@@ -1195,10 +1195,10 @@ static int audioOpen (void* opaque, AVChannelLayout* wanted_channel_layout, int 
   while (!(audio_dev = SDL_OpenAudioDevice (NULL, 0, &wanted_spec, &spec, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE | SDL_AUDIO_ALLOW_CHANNELS_CHANGE))) {
     av_log (NULL, AV_LOG_WARNING, "SDL_OpenAudio (%d channels, %d Hz): %s\n",
                                   wanted_spec.channels, wanted_spec.freq, SDL_GetError());
-    wanted_spec.channels = next_nb_channels[FFMIN(7, wanted_spec.channels)];
+    wanted_spec.channels = (uint8_t)next_nb_channels[FFMIN(7, wanted_spec.channels)];
     if (!wanted_spec.channels) {
-      wanted_spec.freq = next_sample_rates[next_sample_rate_idx--];
-      wanted_spec.channels = wanted_nb_channels;
+      wanted_spec.freq = (uint8_t)next_sample_rates[next_sample_rate_idx--];
+      wanted_spec.channels = (uint8_t)wanted_nb_channels;
       if (!wanted_spec.freq) {
         //{{{  error return
         av_log (NULL, AV_LOG_ERROR, "No more combinations to try, audio open failed\n");
@@ -1252,7 +1252,7 @@ static void calculateDisplayRect (SDL_Rect* rect,
                                     int pic_width, int pic_height, AVRational pic_sar) {
 
   AVRational aspect_ratio = pic_sar;
-  int64_t width, height, x, y;
+  int width, height, x, y;
 
   if (av_cmp_q (aspect_ratio, av_make_q (0, 1)) <= 0)
     aspect_ratio = av_make_q (1, 1);
@@ -1563,8 +1563,8 @@ static void drawVideoAudioDisplay (sVideoState* videoState) {
         data[ch] = videoState->rdft_data + nb_freq * ch;
         i = i_start + ch;
         for (x = 0; x < 2 * nb_freq; x++) {
-          double w = (x-nb_freq) * (1.0 / nb_freq);
-          data_in[ch][x] = videoState->sample_array[i] * (1.0 - w * w);
+          float w = (x-nb_freq) * (1.0f / nb_freq);
+          data_in[ch][x] = videoState->sample_array[i] * (1.0f - w * w);
           i += channels;
           if (i >= SAMPLE_ARRAY_SIZE)
             i -= SAMPLE_ARRAY_SIZE;
@@ -1581,8 +1581,8 @@ static void drawVideoAudioDisplay (sVideoState* videoState) {
         pitch >>= 2;
         pixels += pitch * videoState->height;
         for (y = 0; y < videoState->height; y++) {
-          double w = 1 / sqrt(nb_freq);
-          int a = sqrt (w * sqrt (data[0][y].re * data[0][y].re + data[0][y].im * data[0][y].im));
+          float w = 1.f / sqrtf(nb_freq);
+          int a = (int)sqrtf (w * sqrtf (data[0][y].re * data[0][y].re + data[0][y].im * data[0][y].im));
           int b = (nb_display_channels == 2 ) ? sqrt (w * hypot(data[1][y].re, data[1][y].im)) : a;
           a = FFMIN(a, 255);
           b = FFMIN(b, 255);
