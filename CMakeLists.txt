@@ -24,6 +24,7 @@ project (ffplay VERSION 1.0.0)
   message (STATUS "using ${CMAKE_HOST_SYSTEM_NAME}")
   if (CMAKE_HOST_SYSTEM_NAME STREQUAL Windows)
     target_compile_options (${PROJECT_NAME} PUBLIC /W4
+                                                   /wd4100 /wd4706
                                                    /fp:fast
                                                    ${BUILD_MSVC_COMPILE_OPTIONS})
     if (USE_AVX512)

@@ -2372,7 +2372,7 @@ static int configureVideoFilters (AVFilterGraph* graph, sVideoState* videoState,
   if (ret < 0)
     goto fail;
 
-  if ((ret = av_opt_set_int_list (filt_out, "pix_fmts", pix_fmts, AV_PIX_FMT_NONE, AV_OPT_SEARCH_CHILDREN)) < 0)
+  if ((ret = av_opt_set_int_list (filt_out, "pix_fmts", pix_fmts, uint64_t(AV_PIX_FMT_NONE), AV_OPT_SEARCH_CHILDREN)) < 0)
     goto fail;
 
   last_filter = filt_out;
@@ -2635,18 +2635,18 @@ static int configureAudioFilters (sVideoState* videoState, const char* afilters,
   if (ret < 0)
     goto end;
 
-  if ((ret = av_opt_set_int_list (filt_asink, "sample_fmts", sample_fmts,  AV_SAMPLE_FMT_NONE, AV_OPT_SEARCH_CHILDREN)) < 0)
+  if ((ret = av_opt_set_int_list (filt_asink, "sample_fmts", sample_fmts, (uint64_t)AV_SAMPLE_FMT_NONE, AV_OPT_SEARCH_CHILDREN)) < 0)
     goto end;
-  if ((ret = av_opt_set_int (filt_asink, "all_channel_counts", 1, AV_OPT_SEARCH_CHILDREN)) < 0)
+  if ((ret = av_opt_set_int (filt_asink, "all_channel_counts", 1, (uint64_t)AV_OPT_SEARCH_CHILDREN)) < 0)
     goto end;
 
   if (force_output_format) {
-    sample_rates   [0] = videoState->audio_tgt.freq;
-    if ((ret = av_opt_set_int (filt_asink, "all_channel_counts", 0, AV_OPT_SEARCH_CHILDREN)) < 0)
+    sample_rates[0] = videoState->audio_tgt.freq;
+    if ((ret = av_opt_set_int (filt_asink, "all_channel_counts", 0, (uint64_t)AV_OPT_SEARCH_CHILDREN)) < 0)
       goto end;
     if ((ret = av_opt_set (filt_asink, "ch_layouts", bp.str, AV_OPT_SEARCH_CHILDREN)) < 0)
       goto end;
-    if ((ret = av_opt_set_int_list (filt_asink, "sample_rates"   , sample_rates   ,  -1, AV_OPT_SEARCH_CHILDREN)) < 0)
+    if ((ret = av_opt_set_int_list (filt_asink, "sample_rates", sample_rates, -1, AV_OPT_SEARCH_CHILDREN)) < 0)
       goto end;
     }
 
@@ -2844,7 +2844,7 @@ static void streamSeek (sVideoState* videoState, int64_t pos, int64_t rel, int b
 //{{{
 static void seekChapter (sVideoState* videoState, int incr) {
 
-  int64_t pos = get_master_clock (videoState) * AV_TIME_BASE;
+  int64_t pos = (int64_t)get_master_clock (videoState) * AV_TIME_BASE;
 
   if (!videoState->ic->nb_chapters)
     return;
@@ -3659,7 +3659,7 @@ static void eventLoop (sVideoState* videoState) {
 
       double remaining_time = 0.0;
       if (remaining_time > 0.0)
-        av_usleep ((int64_t)(remaining_time * 1000000.0));
+        av_usleep ((unsigned int)(remaining_time * 1000000.0));
       remaining_time = REFRESH_RATE;
 
       if ((videoState->show_mode != SHOW_MODE_NONE) &&
@@ -3748,17 +3748,17 @@ static void eventLoop (sVideoState* videoState) {
             if (seek_by_bytes) {
               pos = -1;
               if (pos < 0 && videoState->videoStreamId >= 0)
-                pos = frame_queue_last_pos (&videoState->pictq);
+                pos = (double)frame_queue_last_pos (&videoState->pictq);
               if (pos < 0 && videoState->audioStreamId >= 0)
-                pos = frame_queue_last_pos (&videoState->sampq);
+                pos = (double)frame_queue_last_pos (&videoState->sampq);
               if (pos < 0)
-                pos = avio_tell (videoState->ic->pb);
+                pos = (double)avio_tell (videoState->ic->pb);
               if (videoState->ic->bit_rate)
                 incr *= videoState->ic->bit_rate / 8.0;
               else
                 incr *= 180000.0;
               pos += incr;
-              streamSeek (videoState, pos, incr, 1);
+              streamSeek (videoState, (int64_t)pos, (int64_t)incr, 1);
               }
             else {
               pos = get_master_clock (videoState);
@@ -3817,17 +3817,17 @@ static void eventLoop (sVideoState* videoState) {
 
         if (seek_by_bytes || videoState->ic->duration <= 0) {
           uint64_t size =  avio_size(videoState->ic->pb);
-          streamSeek (videoState, size*x/videoState->width, 0, 1);
+          streamSeek (videoState, (int64_t)(size * x /videoState->width), 0, 1);
           }
 
         else {
-          int tns  = videoState->ic->duration / 1000000LL;
+          int tns  = (int)(videoState->ic->duration / 1000000LL);
           int thh  = tns / 3600;
           int tmm  = (tns % 3600) / 60;
           int tss  = (tns % 60);
 
           frac = x / videoState->width;
-          int ns = frac * tns;
+          int ns = (int)(frac * tns);
           int hh = ns / 3600;
           int mm = (ns % 3600) / 60;
           int ss = (ns % 60);
@@ -3836,7 +3836,7 @@ static void eventLoop (sVideoState* videoState) {
                   "Seek to %2.0f%% (%2d:%02d:%02d) of total duration (%2d:%02d:%02d)       \n", frac*100,
                   hh, mm, ss, thh, tmm, tss);
 
-          int64_t ts = frac * videoState->ic->duration;
+          int64_t ts = (int64_t)(frac * videoState->ic->duration);
           if (videoState->ic->start_time != AV_NOPTS_VALUE)
             ts += videoState->ic->start_time;
           streamSeek (videoState, ts, 0, 0);
@@ -3899,7 +3899,7 @@ static int opt_width (void* optctx, const char* opt, const char* arg) {
   if (ret < 0)
     return ret;
 
-  screen_width = num;
+  screen_width = (int)num;
   return 0;
   }
 //}}}
@@ -3911,7 +3911,7 @@ static int opt_height (void* optctx, const char* opt, const char* arg) {
   if (ret < 0)
     return ret;
 
-  screen_height = num;
+  screen_height = (int)num;
   return 0;
   }
 //}}}
@@ -4170,7 +4170,7 @@ int main (int argc, char** argv) {
 
   if (!display_disable) {
     //{{{  show window
-    int flags = SDL_WINDOW_HIDDEN;
+    flags = SDL_WINDOW_HIDDEN;
 
     if (alwaysontop)
       flags |= SDL_WINDOW_ALWAYS_ON_TOP;
@@ -4183,7 +4183,8 @@ int main (int argc, char** argv) {
         SDL_SetHint (SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
       #endif
 
-    window = SDL_CreateWindow (program_name, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, default_width, default_height, flags);
+    window = SDL_CreateWindow (program_name, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 
+                               default_width, default_height, flags);
     SDL_SetHint (SDL_HINT_RENDER_SCALE_QUALITY, "linear");
     if (window) {
       renderer = SDL_CreateRenderer (window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
@@ -4213,8 +4214,5 @@ int main (int argc, char** argv) {
     }
 
   eventLoop (videoState);
-
-  /* never returns */
-  return 0;
   }
 //}}}
