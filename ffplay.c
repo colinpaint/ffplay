@@ -2815,8 +2815,8 @@ static int decoderStart (sDecoder* d, int (*fn)(void*), const char* thread_name,
 //}}}
 //{{{  event handlers
 //{{{
-/* seek in the stream */
 static void streamSeek (sVideoState* videoState, int64_t pos, int64_t rel, int by_bytes) {
+/* seek in the stream */
 
   if (!videoState->seek_req) {
     videoState->seek_pos = pos;
@@ -2825,7 +2825,8 @@ static void streamSeek (sVideoState* videoState, int64_t pos, int64_t rel, int b
     if (by_bytes)
       videoState->seek_flags |= AVSEEK_FLAG_BYTE;
     videoState->seek_req = 1;
-     SDL_CondSignal (videoState->continueReadThread);
+
+    SDL_CondSignal (videoState->continueReadThread);
     }
   }
 //}}}
@@ -3804,25 +3805,24 @@ static void eventLoop (sVideoState* videoState) {
           uint64_t size =  avio_size(videoState->ic->pb);
           streamSeek (videoState, size*x/videoState->width, 0, 1);
           }
+
         else {
-          int64_t ts;
-          int ns, hh, mm, ss;
-          int tns, thh, tmm, tss;
-          tns  = videoState->ic->duration / 1000000LL;
-          thh  = tns / 3600;
-          tmm  = (tns % 3600) / 60;
-          tss  = (tns % 60);
+          int tns  = videoState->ic->duration / 1000000LL;
+          int thh  = tns / 3600;
+          int tmm  = (tns % 3600) / 60;
+          int tss  = (tns % 60);
+
           frac = x / videoState->width;
-          ns   = frac * tns;
-          hh   = ns / 3600;
-          mm   = (ns % 3600) / 60;
-          ss   = (ns % 60);
+          int ns = frac * tns;
+          int hh = ns / 3600;
+          int mm = (ns % 3600) / 60;
+          int ss = (ns % 60);
 
           av_log (NULL, AV_LOG_INFO,
-                 "Seek to %2.0f%% (%2d:%02d:%02d) of total duration (%2d:%02d:%02d)       \n", frac*100,
+                  "Seek to %2.0f%% (%2d:%02d:%02d) of total duration (%2d:%02d:%02d)       \n", frac*100,
                   hh, mm, ss, thh, tmm, tss);
 
-          ts = frac * videoState->ic->duration;
+          int64_t ts = frac * videoState->ic->duration;
           if (videoState->ic->start_time != AV_NOPTS_VALUE)
             ts += videoState->ic->start_time;
           streamSeek (videoState, ts, 0, 0);
