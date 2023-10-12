@@ -18,18 +18,14 @@ set (SDL_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory (SDL2)
 
 project (ffplay VERSION 1.0.0)
-  add_executable (${PROJECT_NAME} ffplay.c
-                                  config.h config_components.h
-                                  opt_common.h opt_common.c
-                                  cmdutils.h cmdutils.c
-                                  )
+  add_executable (${PROJECT_NAME} config.h config_components.h
+                                  ffplay.c opt_common.h opt_common.c cmdutils.h cmdutils.c)
 
   message (STATUS "using ${CMAKE_HOST_SYSTEM_NAME}")
   if (CMAKE_HOST_SYSTEM_NAME STREQUAL Windows)
     target_compile_options (${PROJECT_NAME} PUBLIC /W4
                                                    /fp:fast
-                                                   ${BUILD_MSVC_COMPILE_OPTIONS}
-                                                   )
+                                                   ${BUILD_MSVC_COMPILE_OPTIONS})
     if (USE_AVX512)
       message (STATUS "windows built with AVX X2 AVX512")
       target_compile_options (${PROJECT_NAME} PUBLIC /arch:AVX512)
@@ -64,8 +60,7 @@ project (ffplay VERSION 1.0.0)
                                                    -fno-exceptions
                                                    -march=native
                                                    -g
-                                                   ${BUILD_LINUX_COMPILE_OPTIONS}
-                                                   )
+                                                   ${BUILD_LINUX_COMPILE_OPTIONS})
     # FFmpeg
     message (STATUS "using linux installed ffmpeg library")
     find_package (PkgConfig REQUIRED)
