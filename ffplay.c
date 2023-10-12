@@ -2790,7 +2790,6 @@ static int decoderInit (sDecoder* d, AVCodecContext* avctx, sPacketQueue* queue,
   d->pkt = av_packet_alloc();
   if (!d->pkt)
     return AVERROR(ENOMEM);
-
   d->avctx = avctx;
   d->queue = queue;
   d->empty_queue_cond = empty_queue_cond;
@@ -2804,11 +2803,14 @@ static int decoderInit (sDecoder* d, AVCodecContext* avctx, sPacketQueue* queue,
 static int decoderStart (sDecoder* d, int (*fn)(void*), const char* thread_name, void* arg) {
 
   packet_queue_start (d->queue);
+
   d->decoder_tid = SDL_CreateThread (fn, thread_name, arg);
   if (!d->decoder_tid) {
+    //{{{  error return
     av_log (NULL, AV_LOG_ERROR, "SDL_CreateThread(): %s\n", SDL_GetError());
     return AVERROR(ENOMEM);
     }
+    //}}}
 
   return 0;
   }
@@ -2917,11 +2919,12 @@ static void toggleAudioDisplay (sVideoState* videoState) {
 
 // stream
 //{{{
-static int streamHasEnoughPackets (AVStream* st, int stream_id, sPacketQueue* queue) {
-  return stream_id < 0 ||
+static int streamHasEnoughPackets (AVStream* stream, int streamId, sPacketQueue* queue) {
+  return (streamId < 0) ||
          queue->abort_request ||
-         (st->disposition & AV_DISPOSITION_ATTACHED_PIC) ||
-         queue->nb_packets > MIN_FRAMES && (!queue->duration || av_q2d (st->time_base) * queue->duration > 1.0);
+         (stream->disposition & AV_DISPOSITION_ATTACHED_PIC) ||
+         queue->nb_packets > MIN_FRAMES &&
+         (!queue->duration || (av_q2d (stream->time_base) * queue->duration) > 1.0);
   }
 //}}}
 //{{{
@@ -2929,7 +2932,6 @@ static int streamComponentOpen (sVideoState* videoState, int stream_index) {
 /* open a given stream. Return 0 if OK */
 
   AVFormatContext* ic = videoState->ic;
-  const AVCodec* codec;
   const char* forced_codec_name = NULL;
   AVDictionary* opts = NULL;
   const AVDictionaryEntry* t = NULL;
@@ -2949,8 +2951,7 @@ static int streamComponentOpen (sVideoState* videoState, int stream_index) {
     goto fail;
   avctx->pkt_timebase = ic->streams[stream_index]->time_base;
 
-  codec = avcodec_find_decoder (avctx->codec_id);
-
+  const AVCodec* codec = avcodec_find_decoder (avctx->codec_id);
   switch (avctx->codec_type){
     //{{{
     case AVMEDIA_TYPE_AUDIO:
@@ -3021,7 +3022,7 @@ static int streamComponentOpen (sVideoState* videoState, int stream_index) {
     case AVMEDIA_TYPE_AUDIO: {
       AVFilterContext* sink;
       videoState->audio_filter_src.freq = avctx->sample_rate;
-      ret = av_channel_layout_copy(&videoState->audio_filter_src.ch_layout, &avctx->ch_layout);
+      ret = av_channel_layout_copy (&videoState->audio_filter_src.ch_layout, &avctx->ch_layout);
       if (ret < 0)
         goto fail;
       videoState->audio_filter_src.fmt = avctx->sample_fmt;
@@ -3047,7 +3048,8 @@ static int streamComponentOpen (sVideoState* videoState, int stream_index) {
       videoState->audio_diff_avg_count = 0;
       /* since we do not have a precise anough audio FIFO fullness,
          we correct audio sync only if larger than this threshold */
-      videoState->audio_diff_threshold = (double)(videoState->audio_hw_buf_size) / videoState->audio_tgt.bytes_per_sec;
+      videoState->audio_diff_threshold = (double)(videoState->audio_hw_buf_size) /
+                                         videoState->audio_tgt.bytes_per_sec;
 
       videoState->audioStreamId = stream_index;
       videoState->audioStream = ic->streams[stream_index];
