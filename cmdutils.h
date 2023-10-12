@@ -54,7 +54,7 @@ extern AVDictionary* format_opts;
 extern AVDictionary* codec_opts;
 extern int hide_banner;
 
-//{{{
+ //{{{
 /**
  * Initialize dynamic library loading
  */
@@ -174,7 +174,7 @@ void show_help_options (const OptionDef* options, const char* msg, int req_flags
  * Show help for all options with given flags in class and all its
  * children.
  */
-void show_help_children (const AVClass* class, int flags);
+void show_help_children (const AVClass* avClass, int flags);
 //}}}
 //{{{
 /**

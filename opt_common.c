@@ -76,7 +76,6 @@ enum show_muxdemuxers {
     SHOW_MUXERS,
 };
 //}}}
-
 static FILE *report_file;
 static int report_file_level = AV_LOG_DEBUG;
 //{{{

@@ -19,7 +19,7 @@ add_subdirectory (SDL2)
 
 project (ffplay VERSION 1.0.0)
   add_executable (${PROJECT_NAME} config.h config_components.h
-                                  ffplay.c opt_common.h opt_common.c cmdutils.h cmdutils.c)
+                                  ffplay.cpp opt_common.h opt_common.c cmdutils.h cmdutils.c)
 
   message (STATUS "using ${CMAKE_HOST_SYSTEM_NAME}")
   if (CMAKE_HOST_SYSTEM_NAME STREQUAL Windows)
