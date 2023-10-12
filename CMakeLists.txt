@@ -45,7 +45,7 @@ project (ffplay VERSION 1.0.0)
     # FFmpeg
     target_include_directories (${PROJECT_NAME} PUBLIC include/ffmpeg)
     target_link_directories (${PROJECT_NAME} PUBLIC lib/windows64)
-    target_link_libraries (${PROJECT_NAME} PUBLIC 
+    target_link_libraries (${PROJECT_NAME} PUBLIC
                            avdevice avfilter avformat avcodec avutil swresample swscale)
     # SDL2
     target_link_libraries (${PROJECT_NAME} PUBLIC SDL2)
@@ -76,11 +76,11 @@ project (ffplay VERSION 1.0.0)
     # SDL2
     target_include_directories (${PROJECT_NAME} PUBLIC SDL2/include)
     if (CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
-      message (STATUS "using prebuilt linux ARM SDL"lib/arm64")
+      message (STATUS "using prebuilt linux ARM SDL lib/arm64")
       target_link_directories (${PROJECT_NAME} PUBLIC lib/arm64)
       target_link_libraries (${PROJECT_NAME} PUBLIC libSDL2.a)
     else()
-      message (STATUS "using prebuilt linux 64 SDL"lib/linux64")
+      message (STATUS "using prebuilt linux 64 SDL lib/linux64")
       target_link_directories (${PROJECT_NAME} PUBLIC lib/linux64)
       target_link_libraries (${PROJECT_NAME} PUBLIC libSDL2.a)
     endif()
