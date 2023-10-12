@@ -351,7 +351,7 @@ const struct sTextureFormatEntry {
   int texture_fmt;
   }
 
-const sdlTextureFormatMap[] = {
+ sdlTextureFormatMap[] = {
   { AV_PIX_FMT_RGB8,           SDL_PIXELFORMAT_RGB332 },
   { AV_PIX_FMT_RGB444,         SDL_PIXELFORMAT_RGB444 },
   { AV_PIX_FMT_RGB555,         SDL_PIXELFORMAT_RGB555 },
@@ -2946,7 +2946,7 @@ static int streamComponentOpen (sVideoState* videoState, int stream_index) {
   AVDictionary* opts = NULL;
   const AVDictionaryEntry* t = NULL;
   int sample_rate;
-  AVChannelLayout ch_layout = { 0 };
+  AVChannelLayout ch_layout; // = { 0 };
   int stream_lowres = lowres;
 
   if (stream_index < 0 || stream_index >= ic->nb_streams)
