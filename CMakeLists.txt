@@ -67,6 +67,7 @@ project (ffplay VERSION 1.0.0)
                                                    ${BUILD_LINUX_COMPILE_OPTIONS}
                                                    )
     # FFmpeg
+    message (STATUS "using linux installed ffmpeg library")
     find_package (PkgConfig REQUIRED)
     pkg_check_modules (FFMPEG REQUIRED IMPORTED_TARGET
                        libavdevice libavfilter libavformat libavcodec libavutil libswresample libswscale)
@@ -74,14 +75,14 @@ project (ffplay VERSION 1.0.0)
     target_link_libraries (${PROJECT_NAME} PUBLIC PkgConfig::FFMPEG)
 
     # SDL2
+    message (STATUS "using local copy of linux SDL include")
     target_include_directories (${PROJECT_NAME} PUBLIC include/SDL2/include)
     if (CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
-      message (STATUS "using prebuilt linux ARM SDL lib/arm64")
-      #target_link_options (${PROJECT_NAME} PUBLIC -ldl)
+      message (STATUS "using prebuilt linux ARM SDL lib/arm64 library")
       target_link_directories (${PROJECT_NAME} PUBLIC lib/arm64)
       target_link_libraries (${PROJECT_NAME} PUBLIC libSDL2.a libSDL2main.a dl)
     else()
-      message (STATUS "using prebuilt linux 64 SDL lib/linux64")
+      message (STATUS "using prebuilt linux 64 SDL lib/linux64 library")
       target_link_directories (${PROJECT_NAME} PUBLIC lib/linux64)
       target_link_libraries (${PROJECT_NAME} PUBLIC libSDL2.a)
     endif()
