@@ -40,6 +40,16 @@ project (ffplay VERSION 1.0.0)
       message (STATUS "windows built with AVX")
       target_compile_options (${PROJECT_NAME} PUBLIC /arch:AVX)
     endif()
+
+    message (STATUS "using prebuilt windows64 ffmpeg,SDL lib/windows64")
+    # FFmpeg
+    target_include_directories (${PROJECT_NAME} PUBLIC include/ffmpeg)
+    target_link_directories (${PROJECT_NAME} PUBLIC lib/windows64)
+    target_link_libraries (${PROJECT_NAME} PUBLIC 
+                           avdevice avfilter avformat avcodec avutil swresample swscale)
+    # SDL2
+    target_link_libraries (${PROJECT_NAME} PUBLIC SDL2)
+
   else (CMAKE_HOST_SYSTEM_NAME STREQUAL Linux)
     target_compile_definitions (${PROJECT_NAME} PUBLIC _LARGEFILE64_SOURCE _FILE_OFFSET_BITS=64)
     target_compile_options (${PROJECT_NAME} PUBLIC -Wall
@@ -56,16 +66,6 @@ project (ffplay VERSION 1.0.0)
                                                    -g
                                                    ${BUILD_LINUX_COMPILE_OPTIONS}
                                                    )
-  endif()
-
-  if (CMAKE_HOST_SYSTEM_NAME STREQUAL Windows)
-    message (STATUS "using prebuilt windows64 SDL lib/windows64")
-    target_include_directories (${PROJECT_NAME} PUBLIC include/ffmpeg)
-    target_link_directories (${PROJECT_NAME} PUBLIC lib/windows64)
-    target_link_libraries (${PROJECT_NAME} PUBLIC SDL2
-                           avdevice avfilter avformat avcodec avutil swresample swscale)
-
-  else()
     # FFmpeg
     find_package (PkgConfig REQUIRED)
     pkg_check_modules (FFMPEG REQUIRED IMPORTED_TARGET
