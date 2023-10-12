@@ -898,9 +898,9 @@ static void init_clock (sClock* clock, int* queue_serial) {
 //}}}
 //{{{  audio
 //{{{
-static int cmp_audio_fmts (enum AVSampleFormat fmt1, int64_t channel_count1,
-                                  enum AVSampleFormat fmt2, int64_t channel_count2) {
-/* If channel count == 1, planar and non-planar formats are the same */
+static int compareAudioFormats (enum AVSampleFormat fmt1, int64_t channel_count1,
+                                enum AVSampleFormat fmt2, int64_t channel_count2) {
+// If channel count == 1, planar and non-planar formats are the same
 
   if (channel_count1 == 1 && channel_count2 == 1)
     return av_get_packed_sample_fmt (fmt1) != av_get_packed_sample_fmt(fmt2);
@@ -2488,11 +2488,9 @@ static int videoThread (void* arg) {
   double duration;
   int ret;
   for (;;) {
-    //{{{  frame
     ret = getVideoFrame (videoState, frame);
     if (ret < 0)
       goto the_end;
-
     if (!ret)
       continue;
 
@@ -2501,6 +2499,7 @@ static int videoThread (void* arg) {
         || last_format != frame->format
         || last_serial != videoState->viddec.pkt_serial
         || last_vfilter_idx != videoState->vfilter_idx) {
+      //{{{  configure filters
       av_log (NULL, AV_LOG_DEBUG,
               "Video frame changed from size:%dx%d format:%s serial:%d to size:%dx%d format:%s serial:%d\n",
               last_w, last_h,
@@ -2535,12 +2534,14 @@ static int videoThread (void* arg) {
       last_vfilter_idx = videoState->vfilter_idx;
       frame_rate = av_buffersink_get_frame_rate(filt_out);
       }
+      //}}}
 
     ret = av_buffersrc_add_frame (filt_in, frame);
     if (ret < 0)
       goto the_end;
 
     while (ret >= 0) {
+      //{{{  queue picture
       videoState->frame_last_returned_time = av_gettime_relative() / 1000000.0;
 
       ret = av_buffersink_get_frame_flags (filt_out, frame, 0);
@@ -2551,7 +2552,7 @@ static int videoThread (void* arg) {
         break;
         }
 
-      sFrameData* fd = frame->opaque_ref ? (sFrameData*)frame->opaque_ref->data : NULL;
+      sFrameData* frameData = frame->opaque_ref ? (sFrameData*)frame->opaque_ref->data : NULL;
 
       videoState->frame_last_filter_delay = av_gettime_relative() / 1000000.0 - videoState->frame_last_returned_time;
       if (fabs (videoState->frame_last_filter_delay) > AV_NOSYNC_THRESHOLD / 10.0)
@@ -2560,18 +2561,18 @@ static int videoThread (void* arg) {
       tb = av_buffersink_get_time_base (filt_out);
       duration = (frame_rate.num && frame_rate.den ? av_q2d ((AVRational){frame_rate.den, frame_rate.num}) : 0);
       pts = (frame->pts == AV_NOPTS_VALUE) ? NAN : frame->pts * av_q2d(tb);
-      ret = queuePicture (videoState, frame, pts, duration, fd ? fd->pkt_pos : -1, videoState->viddec.pkt_serial);
+      ret = queuePicture (videoState, frame, pts, duration,
+                          frameData ? frameData->pkt_pos : -1, videoState->viddec.pkt_serial);
 
       av_frame_unref (frame);
 
       if (videoState->videoq.serial != videoState->viddec.pkt_serial)
         break;
       }
-
+      //}}}
     if (ret < 0)
       goto the_end;
     }
-    //}}}
 
 the_end:
   avfilter_graph_free (&graph);
@@ -2676,23 +2677,27 @@ static int audioThread (void* arg) {
       //{{{  got frame
       tb = (AVRational){1, frame->sample_rate};
 
-      reconfigure = cmp_audio_fmts (videoState->audio_filter_src.fmt, videoState->audio_filter_src.ch_layout.nb_channels,
-                                    frame->format, frame->ch_layout.nb_channels)    ||
-      av_channel_layout_compare(&videoState->audio_filter_src.ch_layout, &frame->ch_layout) ||
-      videoState->audio_filter_src.freq != frame->sample_rate ||
-      videoState->auddec.pkt_serial != last_serial;
-
+      reconfigure = compareAudioFormats (videoState->audio_filter_src.fmt,
+                                         videoState->audio_filter_src.ch_layout.nb_channels,
+                                         frame->format,
+                                         frame->ch_layout.nb_channels)
+                    || av_channel_layout_compare (&videoState->audio_filter_src.ch_layout, &frame->ch_layout)
+                    || videoState->audio_filter_src.freq != frame->sample_rate
+                    || videoState->auddec.pkt_serial != last_serial;
       if (reconfigure) {
+        //{{{  reconfigure audio
         char buf1[1024], buf2[1024];
         av_channel_layout_describe (&videoState->audio_filter_src.ch_layout, buf1, sizeof(buf1));
         av_channel_layout_describe (&frame->ch_layout, buf2, sizeof(buf2));
         av_log (NULL, AV_LOG_DEBUG,
                 "Audio frame changed from rate:%d ch:%d fmt:%s layout:%s serial:%d to rate:%d ch:%d fmt:%s layout:%s serial:%d\n",
-                videoState->audio_filter_src.freq, videoState->audio_filter_src.ch_layout.nb_channels, av_get_sample_fmt_name(videoState->audio_filter_src.fmt), buf1, last_serial,
-                frame->sample_rate, frame->ch_layout.nb_channels, av_get_sample_fmt_name(frame->format), buf2, videoState->auddec.pkt_serial);
+                videoState->audio_filter_src.freq, videoState->audio_filter_src.ch_layout.nb_channels,
+                av_get_sample_fmt_name(videoState->audio_filter_src.fmt), buf1, last_serial,
+                frame->sample_rate, frame->ch_layout.nb_channels, av_get_sample_fmt_name(frame->format),
+                buf2, videoState->auddec.pkt_serial);
 
         videoState->audio_filter_src.fmt = frame->format;
-        ret = av_channel_layout_copy(&videoState->audio_filter_src.ch_layout, &frame->ch_layout);
+        ret = av_channel_layout_copy (&videoState->audio_filter_src.ch_layout, &frame->ch_layout);
         if (ret < 0)
           goto the_end;
 
@@ -2702,24 +2707,25 @@ static int audioThread (void* arg) {
         if ((ret = configureAudioFilters (videoState, afilters, 1)) < 0)
           goto the_end;
         }
+        //}}}
 
       if ((ret = av_buffersrc_add_frame (videoState->in_audio_filter, frame)) < 0)
         goto the_end;
 
-      while ((ret = av_buffersink_get_frame_flags(videoState->out_audio_filter, frame, 0)) >= 0) {
+      while ((ret = av_buffersink_get_frame_flags (videoState->out_audio_filter, frame, 0)) >= 0) {
         sFrameData* fd = frame->opaque_ref ? (sFrameData*)frame->opaque_ref->data : NULL;
         tb = av_buffersink_get_time_base (videoState->out_audio_filter);
 
-        sFrame* af;
-        if (!(af = frame_queue_peek_writable (&videoState->sampq)))
+        sFrame* framePeek;
+        if (!(framePeek = frame_queue_peek_writable (&videoState->sampq)))
           goto the_end;
 
-        af->pts = (frame->pts == AV_NOPTS_VALUE) ? NAN : frame->pts * av_q2d(tb);
-        af->pos = fd ? fd->pkt_pos : -1;
-        af->serial = videoState->auddec.pkt_serial;
-        af->duration = av_q2d ((AVRational){frame->nb_samples, frame->sample_rate});
+        framePeek->pts = (frame->pts == AV_NOPTS_VALUE) ? NAN : frame->pts * av_q2d(tb);
+        framePeek->pos = fd ? fd->pkt_pos : -1;
+        framePeek->serial = videoState->auddec.pkt_serial;
+        framePeek->duration = av_q2d ((AVRational){frame->nb_samples, frame->sample_rate});
 
-        av_frame_move_ref (af->frame, frame);
+        av_frame_move_ref (framePeek->frame, frame);
         frame_queue_push (&videoState->sampq);
 
         if (videoState->audioq.serial != videoState->auddec.pkt_serial)
@@ -2810,7 +2816,7 @@ static int decoderStart (sDecoder* d, int (*fn)(void*), const char* thread_name,
 //{{{  event handlers
 //{{{
 /* seek in the stream */
-static void stream_seek (sVideoState* videoState, int64_t pos, int64_t rel, int by_bytes) {
+static void streamSeek (sVideoState* videoState, int64_t pos, int64_t rel, int by_bytes) {
 
   if (!videoState->seek_req) {
     videoState->seek_pos = pos;
@@ -2824,7 +2830,7 @@ static void stream_seek (sVideoState* videoState, int64_t pos, int64_t rel, int 
   }
 //}}}
 //{{{
-static void seek_chapter (sVideoState* videoState, int incr) {
+static void seekChapter (sVideoState* videoState, int incr) {
 
   int64_t pos = get_master_clock (videoState) * AV_TIME_BASE;
 
@@ -2847,19 +2853,19 @@ static void seek_chapter (sVideoState* videoState, int incr) {
     return;
 
   av_log (NULL, AV_LOG_VERBOSE, "Seeking to chapter %d.\n", i);
-  stream_seek (videoState, av_rescale_q (videoState->ic->chapters[i]->start, videoState->ic->chapters[i]->time_base, AV_TIME_BASE_Q), 0, 0);
+  streamSeek (videoState, av_rescale_q (videoState->ic->chapters[i]->start, videoState->ic->chapters[i]->time_base, AV_TIME_BASE_Q), 0, 0);
   }
 //}}}
 
 //{{{
-static void toggle_pause (sVideoState* videoState) {
+static void togglePause (sVideoState* videoState) {
 
   stream_toggle_pause (videoState);
   videoState->step = 0;
   }
 //}}}
 //{{{
-static void step_to_next_frame (sVideoState* videoState) {
+static void stepToNextFrame (sVideoState* videoState) {
 
   /* if the stream is paused unpause it, then step */
   if (videoState->paused)
@@ -2870,12 +2876,12 @@ static void step_to_next_frame (sVideoState* videoState) {
 //}}}
 
 //{{{
-static void toggle_mute (sVideoState* videoState) {
+static void toggleMute (sVideoState* videoState) {
   videoState->muted = !videoState->muted;
   }
 //}}}
 //{{{
-static void update_volume (sVideoState* videoState, int sign, double step) {
+static void updateVolume (sVideoState* videoState, int sign, double step) {
 
   double volume_level = videoState->audio_volume ? (20 * log(videoState->audio_volume / (double)SDL_MIX_MAXVOLUME) / log(10)) : -1000.0;
   int new_volume = lrint (SDL_MIX_MAXVOLUME * pow (10.0, (volume_level + sign * step) / 20.0));
@@ -2885,14 +2891,14 @@ static void update_volume (sVideoState* videoState, int sign, double step) {
 //}}}
 
 //{{{
-static void toggle_full_screen (sVideoState* videoState) {
+static void toggleFullScreen (sVideoState* videoState) {
 
   is_full_screen = !is_full_screen;
   SDL_SetWindowFullscreen (window, is_full_screen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
   }
 //}}}
 //{{{
-static void toggle_audio_display (sVideoState* videoState) {
+static void toggleAudioDisplay (sVideoState* videoState) {
 
   int next = videoState->show_mode;
   do {
@@ -3045,7 +3051,7 @@ static int streamComponentOpen (sVideoState* videoState, int stream_index) {
       videoState->audioStreamId = stream_index;
       videoState->audioStream = ic->streams[stream_index];
 
-      if ((ret = decoderInit (&videoState->auddec, avctx, &videoState->audioq, 
+      if ((ret = decoderInit (&videoState->auddec, avctx, &videoState->audioq,
                               videoState->continueReadThread)) < 0)
         goto fail;
       if (videoState->ic->iformat->flags & AVFMT_NOTIMESTAMPS) {
@@ -3063,7 +3069,7 @@ static int streamComponentOpen (sVideoState* videoState, int stream_index) {
       videoState->videoStreamId = stream_index;
         videoState->videoStream = ic->streams[stream_index];
 
-      if ((ret = decoderInit (&videoState->viddec, avctx, &videoState->videoq, 
+      if ((ret = decoderInit (&videoState->viddec, avctx, &videoState->videoq,
                               videoState->continueReadThread)) < 0)
         goto fail;
       if ((ret = decoderStart (&videoState->viddec, videoThread, "video_decoder", videoState)) < 0)
@@ -3078,7 +3084,7 @@ static int streamComponentOpen (sVideoState* videoState, int stream_index) {
       videoState->subtitleStreamId = stream_index;
       videoState->subtitleStream = ic->streams[stream_index];
 
-      if ((ret = decoderInit (&videoState->subdec, avctx, &videoState->subtitleq, 
+      if ((ret = decoderInit (&videoState->subdec, avctx, &videoState->subtitleq,
                               videoState->continueReadThread)) < 0)
         goto fail;
       if ((ret = decoderStart (&videoState->subdec, subtitleThread, "subtitle_decoder", videoState)) < 0)
@@ -3456,7 +3462,7 @@ static int readThread (void* arg) {
       videoState->queue_attachments_req = 1;
       videoState->eof = 0;
       if (videoState->paused)
-        step_to_next_frame (videoState);
+        stepToNextFrame (videoState);
       }
 
     if (videoState->queue_attachments_req) {
@@ -3487,7 +3493,7 @@ static int readThread (void* arg) {
         (!videoState->audioStream || (videoState->auddec.finished == videoState->audioq.serial && frame_queue_nb_remaining(&videoState->sampq) == 0)) &&
         (!videoState->videoStream || (videoState->viddec.finished == videoState->videoq.serial && frame_queue_nb_remaining(&videoState->pictq) == 0))) {
       if (loop != 1 && (!loop || --loop))
-        stream_seek (videoState, start_time != AV_NOPTS_VALUE ? start_time : 0, 0, 0);
+        streamSeek (videoState, start_time != AV_NOPTS_VALUE ? start_time : 0, 0, 0);
       else if (autoexit) {
         ret = AVERROR_EOF;
         goto fail;
@@ -3663,50 +3669,17 @@ static void eventLoop (sVideoState* videoState) {
            continue;
 
         switch (event.key.keysym.sym) {
-          //{{{
-          case SDLK_f:
-            toggle_full_screen (videoState);
-            videoState->force_refresh = 1;
-            break;
-          //}}}
           case SDLK_p:
-          //{{{
-          case SDLK_SPACE:
-            toggle_pause (videoState);
-            break;
-          //}}}
-          //{{{
-          case SDLK_m:
-            toggle_mute (videoState);
-            break;
-          //}}}
+          case SDLK_SPACE: togglePause (videoState); break;
+          case SDLK_m: toggleMute (videoState); break;
           case SDLK_KP_MULTIPLY:
-          //{{{
-          case SDLK_0:
-            update_volume (videoState, 1, SDL_VOLUME_STEP);
-            break;
-          //}}}
+          case SDLK_0: updateVolume (videoState, 1, SDL_VOLUME_STEP); break;
           case SDLK_KP_DIVIDE:
-          //{{{
-          case SDLK_9:
-            update_volume (videoState, -1, SDL_VOLUME_STEP);
-            break;
-          //}}}
-          //{{{
-          case SDLK_s: // S: Step to next frame
-            step_to_next_frame (videoState);
-            break;
-          //}}}
-          //{{{
-          case SDLK_a: // cycle audio
-            streamCycleChannel (videoState, AVMEDIA_TYPE_AUDIO);
-            break;
-          //}}}
-          //{{{
-          case SDLK_v: // cycle video
-            streamCycleChannel (videoState, AVMEDIA_TYPE_VIDEO);
-            break;
-          //}}}
+          case SDLK_9: updateVolume (videoState, -1, SDL_VOLUME_STEP); break;
+          case SDLK_s: stepToNextFrame (videoState); break;
+
+          case SDLK_a: streamCycleChannel (videoState, AVMEDIA_TYPE_AUDIO); break;
+          case SDLK_v: streamCycleChannel (videoState, AVMEDIA_TYPE_VIDEO); break;
           //{{{
           case SDLK_c: // cycle stream
             streamCycleChannel (videoState, AVMEDIA_TYPE_VIDEO);
@@ -3714,23 +3687,22 @@ static void eventLoop (sVideoState* videoState) {
             streamCycleChannel (videoState, AVMEDIA_TYPE_SUBTITLE);
             break;
           //}}}
-          //{{{
-          case SDLK_t:
-            streamCycleChannel (videoState, AVMEDIA_TYPE_SUBTITLE);
-            break;
-          //}}}
+          case SDLK_t: streamCycleChannel (videoState, AVMEDIA_TYPE_SUBTITLE); break;
+
           //{{{
           case SDLK_w:
             if (videoState->show_mode == SHOW_MODE_VIDEO && videoState->vfilter_idx < nb_vfilters - 1) {
               if (++videoState->vfilter_idx >= nb_vfilters)
                 videoState->vfilter_idx = 0;
-                }
-              else {
-                videoState->vfilter_idx = 0;
-                toggle_audio_display (videoState);
-                }
+              }
+            else {
+              videoState->vfilter_idx = 0;
+              toggleAudioDisplay (videoState);
+              }
             break;
           //}}}
+          case SDLK_f: toggleFullScreen (videoState); videoState->force_refresh = 1; break;
+
           //{{{
           case SDLK_PAGEUP:
             if (videoState->ic->nb_chapters <= 1) {
@@ -3738,7 +3710,7 @@ static void eventLoop (sVideoState* videoState) {
               goto do_seek;
               }
 
-            seek_chapter (videoState, 1);
+            seekChapter (videoState, 1);
             break;
           //}}}
           //{{{
@@ -3748,29 +3720,16 @@ static void eventLoop (sVideoState* videoState) {
               goto do_seek;
               }
 
-            seek_chapter (videoState, -1);
+            seekChapter (videoState, -1);
             break;
           //}}}
-          //{{{
-          case SDLK_LEFT:
-            incr = seek_interval ? -seek_interval : -10.0;
-            goto do_seek;
-          //}}}
-          //{{{
-          case SDLK_RIGHT:
-            incr = seek_interval ? seek_interval : 10.0;
-            goto do_seek;
-          //}}}
-          //{{{
-          case SDLK_UP:
-            incr = 60.0;
-            goto do_seek;
-          //}}}
-          //{{{
+          case SDLK_LEFT: incr = seek_interval ? -seek_interval : -10.0; goto do_seek;
+          case SDLK_RIGHT: incr = seek_interval ? seek_interval : 10.0; goto do_seek;
+          case SDLK_UP: incr = 60.0; goto do_seek;
           case SDLK_DOWN:
             incr = -60.0;
-
           do_seek:
+            //{{{  seek
             if (seek_by_bytes) {
               pos = -1;
               if (pos < 0 && videoState->videoStreamId >= 0)
@@ -3784,7 +3743,7 @@ static void eventLoop (sVideoState* videoState) {
               else
                 incr *= 180000.0;
               pos += incr;
-              stream_seek (videoState, pos, incr, 1);
+              streamSeek (videoState, pos, incr, 1);
               }
             else {
               pos = get_master_clock (videoState);
@@ -3793,15 +3752,11 @@ static void eventLoop (sVideoState* videoState) {
               pos += incr;
               if (videoState->ic->start_time != AV_NOPTS_VALUE && pos < videoState->ic->start_time / (double)AV_TIME_BASE)
                 pos = videoState->ic->start_time / (double)AV_TIME_BASE;
-              stream_seek (videoState, (int64_t)(pos * AV_TIME_BASE), (int64_t)(incr * AV_TIME_BASE), 0);
+              streamSeek (videoState, (int64_t)(pos * AV_TIME_BASE), (int64_t)(incr * AV_TIME_BASE), 0);
               }
-
             break;
-          //}}}
-          //{{{
-          default:
-            break;
-          //}}}
+            //}}}
+          default: break;
           }
 
         break;
@@ -3816,7 +3771,7 @@ static void eventLoop (sVideoState* videoState) {
         if (event.button.button == SDL_BUTTON_LEFT) {
           static int64_t last_mouse_left_click = 0;
           if (av_gettime_relative() - last_mouse_left_click <= 500000) {
-            toggle_full_screen (videoState);
+            toggleFullScreen (videoState);
             videoState->force_refresh = 1;
             last_mouse_left_click = 0;
             }
@@ -3847,7 +3802,7 @@ static void eventLoop (sVideoState* videoState) {
 
         if (seek_by_bytes || videoState->ic->duration <= 0) {
           uint64_t size =  avio_size(videoState->ic->pb);
-          stream_seek (videoState, size*x/videoState->width, 0, 1);
+          streamSeek (videoState, size*x/videoState->width, 0, 1);
           }
         else {
           int64_t ts;
@@ -3862,13 +3817,15 @@ static void eventLoop (sVideoState* videoState) {
           hh   = ns / 3600;
           mm   = (ns % 3600) / 60;
           ss   = (ns % 60);
+
           av_log (NULL, AV_LOG_INFO,
                  "Seek to %2.0f%% (%2d:%02d:%02d) of total duration (%2d:%02d:%02d)       \n", frac*100,
                   hh, mm, ss, thh, tmm, tss);
+
           ts = frac * videoState->ic->duration;
           if (videoState->ic->start_time != AV_NOPTS_VALUE)
             ts += videoState->ic->start_time;
-          stream_seek (videoState, ts, 0, 0);
+          streamSeek (videoState, ts, 0, 0);
           }
 
         break;
