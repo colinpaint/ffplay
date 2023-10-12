@@ -1423,45 +1423,45 @@ static void drawRectangle (int x, int y, int w, int h) {
   }
 //}}}
 //{{{
-static void drawVideoAudioDisplay (VideoState* s) {
+static void drawVideoAudioDisplay (VideoState* videoState) {
 
   int i, i_start, x, y1, y, ys, delay, n, nb_display_channels;
   int ch, h, h2;
 
   int rdft_bits;
-  for (rdft_bits = 1; (1 << rdft_bits) < 2 * s->height; rdft_bits++) ;
+  for (rdft_bits = 1; (1 << rdft_bits) < 2 * videoState->height; rdft_bits++) ;
   int nb_freq = 1 << (rdft_bits - 1);
 
   /* compute display index : center on currently output samples */
-  int channels = s->audio_tgt.ch_layout.nb_channels;
+  int channels = videoState->audio_tgt.ch_layout.nb_channels;
   nb_display_channels = channels;
-  if (!s->paused) {
-    int data_used = s->show_mode == SHOW_MODE_WAVES ? s->width : (2*nb_freq);
+  if (!videoState->paused) {
+    int data_used = videoState->show_mode == SHOW_MODE_WAVES ? videoState->width : (2*nb_freq);
     n = 2 * channels;
-    delay = s->audio_write_buf_size;
+    delay = videoState->audio_write_buf_size;
     delay /= n;
 
     /* to be more precise, we take into account the time spent since the last buffer computation */
     int64_t time_diff = 0;
     if (audio_callback_time) {
       time_diff = av_gettime_relative() - audio_callback_time;
-      delay -= (time_diff * s->audio_tgt.freq) / 1000000;
+      delay -= (time_diff * videoState->audio_tgt.freq) / 1000000;
       }
 
     delay += 2 * data_used;
     if (delay < data_used)
       delay = data_used;
 
-    i_start= x = compute_mod  (s->sample_array_index - delay * channels, SAMPLE_ARRAY_SIZE);
-    if (s->show_mode == SHOW_MODE_WAVES) {
+    i_start= x = compute_mod  (videoState->sample_array_index - delay * channels, SAMPLE_ARRAY_SIZE);
+    if (videoState->show_mode == SHOW_MODE_WAVES) {
       //{{{  precalc show_waves
       h = INT_MIN;
       for (i = 0; i < 1000; i += channels) {
         int idx = (SAMPLE_ARRAY_SIZE + x - i) % SAMPLE_ARRAY_SIZE;
-        int a = s->sample_array[idx];
-        int b = s->sample_array[(idx + 4 * channels) % SAMPLE_ARRAY_SIZE];
-        int c = s->sample_array[(idx + 5 * channels) % SAMPLE_ARRAY_SIZE];
-        int d = s->sample_array[(idx + 9 * channels) % SAMPLE_ARRAY_SIZE];
+        int a = videoState->sample_array[idx];
+        int b = videoState->sample_array[(idx + 4 * channels) % SAMPLE_ARRAY_SIZE];
+        int c = videoState->sample_array[(idx + 5 * channels) % SAMPLE_ARRAY_SIZE];
+        int d = videoState->sample_array[(idx + 9 * channels) % SAMPLE_ARRAY_SIZE];
         int score = a - d;
         if (h < score && (b ^ c) < 0) {
           h = score;
@@ -1471,26 +1471,26 @@ static void drawVideoAudioDisplay (VideoState* s) {
       }
       //}}}
 
-    s->last_i_start = i_start;
+    videoState->last_i_start = i_start;
     }
   else
-    i_start = s->last_i_start;
+    i_start = videoState->last_i_start;
 
-  if (s->show_mode == SHOW_MODE_WAVES) {
+  if (videoState->show_mode == SHOW_MODE_WAVES) {
     //{{{  draw waves
     SDL_SetRenderDrawColor (renderer, 255, 255, 255, 255);
 
     // total height for one channel
-    h = s->height / nb_display_channels;
+    h = videoState->height / nb_display_channels;
 
     // precalc graph height / 2
     h2 = (h * 9) / 20;
     for (ch = 0; ch < nb_display_channels; ch++) {
        i = i_start + ch;
        // position of center line
-       y1 = s->ytop + ch * h + (h / 2);
-       for (x = 0; x < s->width; x++) {
-         y = (s->sample_array[i] * h2) >> 15;
+       y1 = videoState->ytop + ch * h + (h / 2);
+       for (x = 0; x < videoState->width; x++) {
+         y = (videoState->sample_array[i] * h2) >> 15;
          if (y < 0) {
            y = -y;
            ys = y1 - y;
@@ -1498,7 +1498,7 @@ static void drawVideoAudioDisplay (VideoState* s) {
          else {
            ys = y1;
            }
-         drawRectangle (s->xleft + x, ys, 1, y);
+         drawRectangle (videoState->xleft + x, ys, 1, y);
          i += channels;
          if (i >= SAMPLE_ARRAY_SIZE)
            i -= SAMPLE_ARRAY_SIZE;
@@ -1508,52 +1508,53 @@ static void drawVideoAudioDisplay (VideoState* s) {
      // draw
      SDL_SetRenderDrawColor (renderer, 0, 0, 255, 255);
      for (ch = 1; ch < nb_display_channels; ch++) {
-       y = s->ytop + ch * h;
-       drawRectangle (s->xleft, y, s->width, 1);
+       y = videoState->ytop + ch * h;
+       drawRectangle (videoState->xleft, y, videoState->width, 1);
        }
      }
     //}}}
   else {
     //{{{  draw rdft
     int err = 0;
-    if (realloc_texture (&s->vis_texture, SDL_PIXELFORMAT_ARGB8888, s->width, s->height, SDL_BLENDMODE_NONE, 1) < 0)
+    if (realloc_texture (&videoState->vis_texture, SDL_PIXELFORMAT_ARGB8888, 
+                         videoState->width, videoState->height, SDL_BLENDMODE_NONE, 1) < 0)
       return;
 
-    if (s->xpos >= s->width)
-      s->xpos = 0;
+    if (videoState->xpos >= videoState->width)
+      videoState->xpos = 0;
 
     nb_display_channels = FFMIN (nb_display_channels, 2);
-    if (rdft_bits != s->rdft_bits) {
+    if (rdft_bits != videoState->rdft_bits) {
       const float rdft_scale = 1.0;
-      av_tx_uninit (&s->rdft);
-      av_freep (&s->real_data);
-      av_freep (&s->rdft_data);
-      s->rdft_bits = rdft_bits;
-      s->real_data = av_malloc_array (nb_freq, 4 *sizeof(*s->real_data));
-      s->rdft_data = av_malloc_array (nb_freq + 1, 2 *sizeof(*s->rdft_data));
-      err = av_tx_init (&s->rdft, &s->rdft_fn, AV_TX_FLOAT_RDFT, 0, 1 << rdft_bits, &rdft_scale, 0);
+      av_tx_uninit (&videoState->rdft);
+      av_freep (&videoState->real_data);
+      av_freep (&videoState->rdft_data);
+      videoState->rdft_bits = rdft_bits;
+      videoState->real_data = av_malloc_array (nb_freq, 4 *sizeof(*videoState->real_data));
+      videoState->rdft_data = av_malloc_array (nb_freq + 1, 2 *sizeof(*videoState->rdft_data));
+      err = av_tx_init (&videoState->rdft, &videoState->rdft_fn, AV_TX_FLOAT_RDFT, 0, 1 << rdft_bits, &rdft_scale, 0);
       }
 
-    if (err < 0 || !s->rdft_data) {
+    if (err < 0 || !videoState->rdft_data) {
       av_log (NULL, AV_LOG_ERROR, "Failed to allocate buffers for RDFT, switching to waves display\n");
-      s->show_mode = SHOW_MODE_WAVES;
+      videoState->show_mode = SHOW_MODE_WAVES;
       }
     else {
       float* data_in[2];
       AVComplexFloat* data[2];
-      SDL_Rect rect = {.x = s->xpos, .y = 0, .w = 1, .h = s->height};
+      SDL_Rect rect = {.x = videoState->xpos, .y = 0, .w = 1, .h = videoState->height};
       for (ch = 0; ch < nb_display_channels; ch++) {
-        data_in[ch] = s->real_data + 2 * nb_freq * ch;
-        data[ch] = s->rdft_data + nb_freq * ch;
+        data_in[ch] = videoState->real_data + 2 * nb_freq * ch;
+        data[ch] = videoState->rdft_data + nb_freq * ch;
         i = i_start + ch;
         for (x = 0; x < 2 * nb_freq; x++) {
           double w = (x-nb_freq) * (1.0 / nb_freq);
-          data_in[ch][x] = s->sample_array[i] * (1.0 - w * w);
+          data_in[ch][x] = videoState->sample_array[i] * (1.0 - w * w);
           i += channels;
           if (i >= SAMPLE_ARRAY_SIZE)
             i -= SAMPLE_ARRAY_SIZE;
           }
-        s->rdft_fn (s->rdft, data[ch], data_in[ch], sizeof(float));
+        videoState->rdft_fn (videoState->rdft, data[ch], data_in[ch], sizeof(float));
         data[ch][0].im = data[ch][nb_freq].re;
         data[ch][nb_freq].re = 0;
         }
@@ -1561,10 +1562,10 @@ static void drawVideoAudioDisplay (VideoState* s) {
       //{{{  draw rdft texture slowly, it is more than fast enough. */
       uint32_t* pixels;
       int pitch;
-      if (!SDL_LockTexture (s->vis_texture, &rect, (void**)&pixels, &pitch)) {
+      if (!SDL_LockTexture (videoState->vis_texture, &rect, (void**)&pixels, &pitch)) {
         pitch >>= 2;
-        pixels += pitch * s->height;
-        for (y = 0; y < s->height; y++) {
+        pixels += pitch * videoState->height;
+        for (y = 0; y < videoState->height; y++) {
           double w = 1 / sqrt(nb_freq);
           int a = sqrt (w * sqrt (data[0][y].re * data[0][y].re + data[0][y].im * data[0][y].im));
           int b = (nb_display_channels == 2 ) ? sqrt (w * hypot(data[1][y].re, data[1][y].im)) : a;
@@ -1573,14 +1574,14 @@ static void drawVideoAudioDisplay (VideoState* s) {
           pixels -= pitch;
           *pixels = (a << 16) + (b << 8) + ((a+b) >> 1);
           }
-        SDL_UnlockTexture (s->vis_texture);
+        SDL_UnlockTexture (videoState->vis_texture);
         }
       //}}}
-      SDL_RenderCopy (renderer, s->vis_texture, NULL, NULL);
+      SDL_RenderCopy (renderer, videoState->vis_texture, NULL, NULL);
       }
 
-    if (!s->paused)
-      s->xpos++;
+    if (!videoState->paused)
+      videoState->xpos++;
     }
     //}}}
   }
