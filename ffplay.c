@@ -3816,6 +3816,7 @@ static void eventLoop (sVideoState* videoState) {
           else
             last_mouse_left_click = av_gettime_relative();
           }
+        // !!! ok !!!
         break;
       //}}}
       //{{{
