@@ -64,7 +64,6 @@ project (ffplay VERSION 1.0.0)
                                                    -fno-exceptions
                                                    -march=native
                                                    -g
-                                                   -dl
                                                    ${BUILD_LINUX_COMPILE_OPTIONS}
                                                    )
     # FFmpeg
