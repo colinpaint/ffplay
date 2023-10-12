@@ -347,7 +347,7 @@ const struct sTextureFormatEntry {
   int texture_fmt;
   }
 
-const sdlTexture_format_map[] = {
+const sdlTextureFormatMap[] = {
   { AV_PIX_FMT_RGB8,           SDL_PIXELFORMAT_RGB332 },
   { AV_PIX_FMT_RGB444,         SDL_PIXELFORMAT_RGB444 },
   { AV_PIX_FMT_RGB555,         SDL_PIXELFORMAT_RGB555 },
@@ -1306,9 +1306,9 @@ static void getSdlPixfmtAndBlendmode (int format, Uint32* sdl_pix_fmt, SDL_Blend
     *sdl_blendmode = SDL_BLENDMODE_BLEND;
 
   *sdl_pix_fmt = SDL_PIXELFORMAT_UNKNOWN;
-  for (int i = 0; i < FF_ARRAY_ELEMS (sdlTexture_format_map) - 1; i++) {
-    if (format == sdlTexture_format_map[i].format) {
-      *sdl_pix_fmt = sdlTexture_format_map[i].texture_fmt;
+  for (int i = 0; i < FF_ARRAY_ELEMS (sdlTextureFormatMap) - 1; i++) {
+    if (format == sdlTextureFormatMap[i].format) {
+      *sdl_pix_fmt = sdlTextureFormatMap[i].texture_fmt;
       return;
       }
     }
@@ -1460,7 +1460,7 @@ static void drawVideoAudioDisplay (sVideoState* videoState) {
     int64_t time_diff = 0;
     if (audio_callback_time) {
       time_diff = av_gettime_relative() - audio_callback_time;
-      delay -= (time_diff * videoState->audio_tgt.freq) / 1000000;
+      delay -= (int)(time_diff * videoState->audio_tgt.freq / 1000000);
       }
 
     delay += 2 * data_used;
@@ -1581,9 +1581,9 @@ static void drawVideoAudioDisplay (sVideoState* videoState) {
         pitch >>= 2;
         pixels += pitch * videoState->height;
         for (y = 0; y < videoState->height; y++) {
-          float w = 1.f / sqrtf(nb_freq);
+          float w = 1.f / sqrtf ((float)nb_freq);
           int a = (int)sqrtf (w * sqrtf (data[0][y].re * data[0][y].re + data[0][y].im * data[0][y].im));
-          int b = (nb_display_channels == 2 ) ? sqrt (w * hypot(data[1][y].re, data[1][y].im)) : a;
+          int b = (nb_display_channels == 2) ? (int)(sqrt (w * hypot(data[1][y].re, data[1][y].im))) : a;
           a = FFMIN(a, 255);
           b = FFMIN(b, 255);
           pixels -= pitch;
@@ -2312,7 +2312,7 @@ static int decodeFrame (sDecoder* decoder, AVFrame* frame, AVSubtitle *sub) {
 static int configureVideoFilters (AVFilterGraph* graph, sVideoState* videoState,
                                     const char* vfilters, AVFrame* frame) {
 
-  enum AVPixelFormat pix_fmts[FF_ARRAY_ELEMS(sdlTexture_format_map)];
+  enum AVPixelFormat pix_fmts[FF_ARRAY_ELEMS(sdlTextureFormatMap)];
 
   char sws_flags_str[512] = "";
   char buffersrc_args[256];
@@ -2326,9 +2326,9 @@ static int configureVideoFilters (AVFilterGraph* graph, sVideoState* videoState,
 
   int nb_pix_fmts = 0;
   for (int i = 0; i < renderer_info.num_texture_formats; i++) {
-    for (int j = 0; j < FF_ARRAY_ELEMS(sdlTexture_format_map) - 1; j++) {
-      if (renderer_info.texture_formats[i] == sdlTexture_format_map[j].texture_fmt) {
-        pix_fmts[nb_pix_fmts++] = sdlTexture_format_map[j].format;
+    for (int j = 0; j < FF_ARRAY_ELEMS(sdlTextureFormatMap) - 1; j++) {
+      if (renderer_info.texture_formats[i] == sdlTextureFormatMap[j].texture_fmt) {
+        pix_fmts[nb_pix_fmts++] = sdlTextureFormatMap[j].format;
         break;
         }
       }
@@ -2594,7 +2594,7 @@ static int configureAudioFilters (sVideoState* videoState, const char* afilters,
   AVFilterContext* filt_asink = NULL;
 
   char aresample_swr_opts[512] = "";
-  const AVDictionaryEntry* e = NULL;
+  const AVDictionaryEntry* entry = NULL;
   AVBPrint bp;
   char asrc_args[256];
   int ret;
@@ -2606,8 +2606,8 @@ static int configureAudioFilters (sVideoState* videoState, const char* afilters,
 
   av_bprint_init (&bp, 0, AV_BPRINT_SIZE_AUTOMATIC);
 
-  while ((e = av_dict_iterate(swr_opts, e)))
-    av_strlcatf (aresample_swr_opts, sizeof(aresample_swr_opts), "%s=%s:", e->key, e->value);
+  while ((entry = av_dict_iterate(swr_opts, entry)))
+    av_strlcatf (aresample_swr_opts, sizeof(aresample_swr_opts), "%s=%s:", entry->key, entry->value);
   if (strlen (aresample_swr_opts))
       aresample_swr_opts[strlen(aresample_swr_opts)-1] = '\0';
   av_opt_set (videoState->agraph, "aresample_swr_opts", aresample_swr_opts, 0);
@@ -2616,31 +2616,31 @@ static int configureAudioFilters (sVideoState* videoState, const char* afilters,
 
   ret = snprintf (asrc_args, sizeof(asrc_args),
                   "sample_rate=%d:sample_fmt=%s:time_base=%d/%d:channel_layout=%s",
-                  videoState->audio_filter_src.freq, av_get_sample_fmt_name(videoState->audio_filter_src.fmt),
+                  videoState->audio_filter_src.freq, av_get_sample_fmt_name (videoState->audio_filter_src.fmt),
                   1, videoState->audio_filter_src.freq, bp.str);
 
-  ret = avfilter_graph_create_filter (&filt_asrc, avfilter_get_by_name("abuffer"), "ffplay_abuffer",
+  ret = avfilter_graph_create_filter (&filt_asrc, avfilter_get_by_name ("abuffer"), "ffplay_abuffer",
                                       asrc_args, NULL, videoState->agraph);
   if (ret < 0)
      goto end;
 
-  ret = avfilter_graph_create_filter (&filt_asink, avfilter_get_by_name("abuffersink"), "ffplay_abuffersink",
+  ret = avfilter_graph_create_filter (&filt_asink, avfilter_get_by_name ("abuffersink"), "ffplay_abuffersink",
                                       NULL, NULL, videoState->agraph);
   if (ret < 0)
     goto end;
 
-  if ((ret = av_opt_set_int_list(filt_asink, "sample_fmts", sample_fmts,  AV_SAMPLE_FMT_NONE, AV_OPT_SEARCH_CHILDREN)) < 0)
+  if ((ret = av_opt_set_int_list (filt_asink, "sample_fmts", sample_fmts,  AV_SAMPLE_FMT_NONE, AV_OPT_SEARCH_CHILDREN)) < 0)
     goto end;
-  if ((ret = av_opt_set_int(filt_asink, "all_channel_counts", 1, AV_OPT_SEARCH_CHILDREN)) < 0)
+  if ((ret = av_opt_set_int (filt_asink, "all_channel_counts", 1, AV_OPT_SEARCH_CHILDREN)) < 0)
     goto end;
 
   if (force_output_format) {
     sample_rates   [0] = videoState->audio_tgt.freq;
-    if ((ret = av_opt_set_int(filt_asink, "all_channel_counts", 0, AV_OPT_SEARCH_CHILDREN)) < 0)
+    if ((ret = av_opt_set_int (filt_asink, "all_channel_counts", 0, AV_OPT_SEARCH_CHILDREN)) < 0)
       goto end;
-    if ((ret = av_opt_set(filt_asink, "ch_layouts", bp.str, AV_OPT_SEARCH_CHILDREN)) < 0)
+    if ((ret = av_opt_set (filt_asink, "ch_layouts", bp.str, AV_OPT_SEARCH_CHILDREN)) < 0)
       goto end;
-    if ((ret = av_opt_set_int_list(filt_asink, "sample_rates"   , sample_rates   ,  -1, AV_OPT_SEARCH_CHILDREN)) < 0)
+    if ((ret = av_opt_set_int_list (filt_asink, "sample_rates"   , sample_rates   ,  -1, AV_OPT_SEARCH_CHILDREN)) < 0)
       goto end;
     }
 
@@ -2652,8 +2652,8 @@ static int configureAudioFilters (sVideoState* videoState, const char* afilters,
 
 end:
   if (ret < 0)
-    avfilter_graph_free(&videoState->agraph);
-  av_bprint_finalize(&bp, NULL);
+    avfilter_graph_free (&videoState->agraph);
+  av_bprint_finalize (&bp, NULL);
 
   return ret;
   }
