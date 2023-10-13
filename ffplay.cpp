@@ -3264,7 +3264,7 @@ int readThread (void* arg) {
   int i, ret;
   int st_index[AVMEDIA_TYPE_NB];
   int64_t stream_start_time;
-  int pkt_in_play_range = 0;
+  int packetInPlayRange = 0;
   int scan_all_pmts_set = 0;
   int64_t pkt_ts;
 
@@ -3572,17 +3572,17 @@ int readThread (void* arg) {
     /* check if packet is in play range specified by user, then queue, otherwise discard */
     stream_start_time = formatContext->streams[pkt->stream_index]->start_time;
     pkt_ts = pkt->pts == AV_NOPTS_VALUE ? pkt->dts : pkt->pts;
-    pkt_in_play_range = gDuration == AV_NOPTS_VALUE ||
+    packetInPlayRange = gDuration == AV_NOPTS_VALUE ||
                         (pkt_ts - (stream_start_time != AV_NOPTS_VALUE ? stream_start_time : 0)) *
                         av_q2d(formatContext->streams[pkt->stream_index]->time_base) -
                         (double)(gStartTime != AV_NOPTS_VALUE ? gStartTime : 0) / 1000000
                         <= ((double)gDuration / 1000000);
-    if (pkt->stream_index == videoState->audioStreamId && pkt_in_play_range)
+    if (pkt->stream_index == videoState->audioStreamId && packetInPlayRange)
       packet_queue_put (&videoState->audioq, pkt);
-    else if (pkt->stream_index == videoState->videoStreamId && pkt_in_play_range
+    else if (pkt->stream_index == videoState->videoStreamId && packetInPlayRange
              && !(videoState->videoStream->disposition & AV_DISPOSITION_ATTACHED_PIC))
       packet_queue_put (&videoState->videoq, pkt);
-    else if (pkt->stream_index == videoState->subtitleStreamId && pkt_in_play_range)
+    else if (pkt->stream_index == videoState->subtitleStreamId && packetInPlayRange)
       packet_queue_put (&videoState->subtitleq, pkt);
    else
       av_packet_unref (pkt);
