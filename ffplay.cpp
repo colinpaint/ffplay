@@ -831,6 +831,25 @@ int64_t frame_queue_last_pos (sFrameQueue* frameQueue) {
 //{{{
 class sDecoder {
 public:
+  //{{{
+  void decoderAbort (sFrameQueue* frameQueue) {
+
+    packet_queue_abort (queue);
+    frame_queue_signal (frameQueue);
+    SDL_WaitThread (decoder_tid, NULL);
+
+    decoder_tid = NULL;
+    packet_queue_flush (queue);
+    }
+  //}}}
+  //{{{
+  void decoderDestroy() {
+
+    av_packet_free (&pkt);
+    avcodec_free_context (&avctx);
+    }
+  //}}}
+
   AVPacket* pkt;
   sPacketQueue* queue;
   AVCodecContext* avctx;
@@ -849,24 +868,6 @@ public:
 
   SDL_Thread* decoder_tid;
   };
-//}}}
-//{{{
-void decoderAbort (sDecoder* decoder, sFrameQueue* frameQueue) {
-
-  packet_queue_abort (decoder->queue);
-  frame_queue_signal (frameQueue);
-  SDL_WaitThread (decoder->decoder_tid, NULL);
-
-  decoder->decoder_tid = NULL;
-  packet_queue_flush (decoder->queue);
-  }
-//}}}
-//{{{
-void decoderDestroy (sDecoder* d) {
-
-  av_packet_free (&d->pkt);
-  avcodec_free_context (&d->avctx);
-  }
 //}}}
 
 //{{{
@@ -1140,10 +1141,10 @@ public:
     switch (codecParameters->codec_type) {
       //{{{
       case AVMEDIA_TYPE_AUDIO:
-        decoderAbort (&auddec, &sampq);
+        auddec.decoderAbort (&sampq);
 
         SDL_CloseAudioDevice (gAudioDevice);
-        decoderDestroy (&auddec);
+        auddec.decoderDestroy ();
         swr_free (&swrContext);
         av_freep (&audio_buf1);
 
@@ -1161,14 +1162,14 @@ public:
       //}}}
       //{{{
       case AVMEDIA_TYPE_VIDEO:
-        decoderAbort (&viddec, &pictq);
-        decoderDestroy (&viddec);
+        viddec.decoderAbort (&pictq);
+        viddec.decoderDestroy ();
         break;
       //}}}
       //{{{
       case AVMEDIA_TYPE_SUBTITLE:
-        decoderAbort (&subdec, &subpq);
-        decoderDestroy (&subdec);
+        subdec.decoderAbort (&subpq);
+        subdec.decoderDestroy ();
         break;
       //}}}
       //{{{
