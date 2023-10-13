@@ -128,6 +128,35 @@ const int program_birth_year = 2003;
 
 enum eSyncMode { AV_SYNC_AUDIO_MASTER, AV_SYNC_VIDEO_MASTER, AV_SYNC_EXTERNAL_CLOCK };
 enum eShowMode { SHOW_MODE_NONE = -1, SHOW_MODE_VIDEO = 0, SHOW_MODE_WAVES, SHOW_MODE_RDFT, SHOW_MODE_NB };
+//{{{
+const struct sTextureFormatEntry {
+  enum AVPixelFormat format;
+  int texture_fmt;
+  }
+
+ sdlTextureFormatMap[] = {
+  { AV_PIX_FMT_RGB8,           SDL_PIXELFORMAT_RGB332 },
+  { AV_PIX_FMT_RGB444,         SDL_PIXELFORMAT_RGB444 },
+  { AV_PIX_FMT_RGB555,         SDL_PIXELFORMAT_RGB555 },
+  { AV_PIX_FMT_BGR555,         SDL_PIXELFORMAT_BGR555 },
+  { AV_PIX_FMT_RGB565,         SDL_PIXELFORMAT_RGB565 },
+  { AV_PIX_FMT_BGR565,         SDL_PIXELFORMAT_BGR565 },
+  { AV_PIX_FMT_RGB24,          SDL_PIXELFORMAT_RGB24 },
+  { AV_PIX_FMT_BGR24,          SDL_PIXELFORMAT_BGR24 },
+  { AV_PIX_FMT_0RGB32,         SDL_PIXELFORMAT_RGB888 },
+  { AV_PIX_FMT_0BGR32,         SDL_PIXELFORMAT_BGR888 },
+  { AV_PIX_FMT_NE(RGB0, 0BGR), SDL_PIXELFORMAT_RGBX8888 },
+  { AV_PIX_FMT_NE(BGR0, 0RGB), SDL_PIXELFORMAT_BGRX8888 },
+  { AV_PIX_FMT_RGB32,          SDL_PIXELFORMAT_ARGB8888 },
+  { AV_PIX_FMT_RGB32_1,        SDL_PIXELFORMAT_RGBA8888 },
+  { AV_PIX_FMT_BGR32,          SDL_PIXELFORMAT_ABGR8888 },
+  { AV_PIX_FMT_BGR32_1,        SDL_PIXELFORMAT_BGRA8888 },
+  { AV_PIX_FMT_YUV420P,        SDL_PIXELFORMAT_IYUV },
+  { AV_PIX_FMT_YUYV422,        SDL_PIXELFORMAT_YUY2 },
+  { AV_PIX_FMT_UYVY422,        SDL_PIXELFORMAT_UYVY },
+  { AV_PIX_FMT_NONE,           SDL_PIXELFORMAT_UNKNOWN },
+  };
+//}}}
 
 //{{{
 class sPacketList {
@@ -300,7 +329,7 @@ public:
         ret = 0;
         break;
         }
-      else 
+      else
         SDL_CondWait (cond, mutex);
        }
 
@@ -592,39 +621,9 @@ public:
   };
 //}}}
 
-//{{{
-const struct sTextureFormatEntry {
-  enum AVPixelFormat format;
-  int texture_fmt;
-  }
-
- sdlTextureFormatMap[] = {
-  { AV_PIX_FMT_RGB8,           SDL_PIXELFORMAT_RGB332 },
-  { AV_PIX_FMT_RGB444,         SDL_PIXELFORMAT_RGB444 },
-  { AV_PIX_FMT_RGB555,         SDL_PIXELFORMAT_RGB555 },
-  { AV_PIX_FMT_BGR555,         SDL_PIXELFORMAT_BGR555 },
-  { AV_PIX_FMT_RGB565,         SDL_PIXELFORMAT_RGB565 },
-  { AV_PIX_FMT_BGR565,         SDL_PIXELFORMAT_BGR565 },
-  { AV_PIX_FMT_RGB24,          SDL_PIXELFORMAT_RGB24 },
-  { AV_PIX_FMT_BGR24,          SDL_PIXELFORMAT_BGR24 },
-  { AV_PIX_FMT_0RGB32,         SDL_PIXELFORMAT_RGB888 },
-  { AV_PIX_FMT_0BGR32,         SDL_PIXELFORMAT_BGR888 },
-  { AV_PIX_FMT_NE(RGB0, 0BGR), SDL_PIXELFORMAT_RGBX8888 },
-  { AV_PIX_FMT_NE(BGR0, 0RGB), SDL_PIXELFORMAT_BGRX8888 },
-  { AV_PIX_FMT_RGB32,          SDL_PIXELFORMAT_ARGB8888 },
-  { AV_PIX_FMT_RGB32_1,        SDL_PIXELFORMAT_RGBA8888 },
-  { AV_PIX_FMT_BGR32,          SDL_PIXELFORMAT_ABGR8888 },
-  { AV_PIX_FMT_BGR32_1,        SDL_PIXELFORMAT_BGRA8888 },
-  { AV_PIX_FMT_YUV420P,        SDL_PIXELFORMAT_IYUV },
-  { AV_PIX_FMT_YUYV422,        SDL_PIXELFORMAT_YUY2 },
-  { AV_PIX_FMT_UYVY422,        SDL_PIXELFORMAT_UYVY },
-  { AV_PIX_FMT_NONE,           SDL_PIXELFORMAT_UNKNOWN },
-  };
-//}}}
 //{{{  options vars
 static const AVInputFormat* gInputFileFormat;
 static const char* gFilename;
-
 static const char* gWindowTitle;
 
 static int default_width  = 640;
@@ -642,7 +641,7 @@ static const char* wanted_stream_spec[AVMEDIA_TYPE_NB] = {0};
 static int seek_by_bytes = -1;
 static float seek_interval = 10;
 static int gDisplayDisable;
-static int borderless;
+static int gBorderless;
 static int alwaysontop;
 
 static int show_status = -1;
@@ -4228,7 +4227,7 @@ const OptionDef options[] = {
   { "seek_interval", OPT_FLOAT | HAS_ARG, { &seek_interval }, "set seek interval for left/right keys, in seconds", "seconds" },
 
   { "nodisp", OPT_BOOL, { &gDisplayDisable }, "disable graphical display" },
-  { "noborder", OPT_BOOL, { &borderless }, "borderless window" },
+  { "noborder", OPT_BOOL, { &gBorderless }, "borderless window" },
   { "alwaysontop", OPT_BOOL, { &alwaysontop }, "window always on top" },
 
   { "volume", OPT_INT | HAS_ARG, { &startup_volume}, "set startup volume 0=min 100=max", "volume" },
@@ -4389,7 +4388,8 @@ int main (int argc, char** argv) {
 
     if (alwaysontop)
       flags |= SDL_WINDOW_ALWAYS_ON_TOP;
-    if (borderless)
+
+    if (gBorderless)
       flags |= SDL_WINDOW_BORDERLESS;
     else
       flags |= SDL_WINDOW_RESIZABLE;
