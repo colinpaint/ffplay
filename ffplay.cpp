@@ -158,6 +158,7 @@ const struct sTextureFormatEntry {
   };
 //}}}
 
+
 //{{{  context vars
 static SDL_Window* gWindow = NULL;
 
@@ -168,6 +169,66 @@ static SDL_AudioDeviceID gAudioDevice;
 static int64_t gAudioCallbackTime = 0;
 
 static int gFullScreen = 0;
+//}}}
+//{{{  option vars
+static const AVInputFormat* gInputFileFormat;
+static const char* gFilename;
+static const char* gWindowTitle;
+
+static int default_width  = 640;
+static int default_height = 480;
+static int screen_width  = 0;
+static int screen_height = 0;
+static int screen_left = SDL_WINDOWPOS_CENTERED;
+static int screen_top = SDL_WINDOWPOS_CENTERED;
+
+static int gAudioDisable;
+static int gVideoDisable;
+static int gSubtitleDisable;
+
+static int decoder_reorder_pts = -1;
+static const char* wanted_stream_spec[AVMEDIA_TYPE_NB] = {0};
+static int seek_by_bytes = -1;
+static float seek_interval = 10;
+static int gDisplayDisable;
+static int gBorderless;
+static int alwaysontop;
+
+static int show_status = -1;
+
+static int startup_volume = 100;
+static int av_sync_type = AV_SYNC_AUDIO_MASTER;
+static int64_t gStartTime = AV_NOPTS_VALUE;
+static int64_t gDuration = AV_NOPTS_VALUE;
+
+static int fast = 0;
+static int genpts = 0;
+static int lowres = 0;
+
+static int autoexit;
+static int gExitOnKeydown;
+static int exit_on_mousedown;
+
+static int loop = 1;
+static int framedrop = -1;
+static int infinite_buffer = -1;
+
+static enum eShowMode show_mode = SHOW_MODE_NONE;
+static const char* audio_codec_name;
+static const char* subtitle_codec_name;
+static const char* video_codec_name;
+double rdftspeed = 0.02;
+
+static int64_t cursor_last_shown;
+static int cursor_hidden = 0;
+
+static const char** vfilters_list = NULL;
+static int nb_vfilters = 0;
+static char* afilters = NULL;
+
+static int autorotate = 1;
+static int find_stream_info = 1;
+static int filter_nbthreads = 0;
 //}}}
 
 //{{{
@@ -869,6 +930,150 @@ public:
   SDL_Thread* decoder_tid;
   };
 //}}}
+//{{{
+int decoderInit (sDecoder* d, AVCodecContext* avctx, sPacketQueue* queue, SDL_cond *empty_queue_cond) {
+
+  memset (d, 0, sizeof(sDecoder));
+
+  d->pkt = av_packet_alloc();
+  if (!d->pkt)
+    return AVERROR(ENOMEM);
+  d->avctx = avctx;
+  d->queue = queue;
+  d->empty_queue_cond = empty_queue_cond;
+  d->start_pts = AV_NOPTS_VALUE;
+  d->pkt_serial = -1;
+
+  return 0;
+  }
+//}}}
+//{{{
+int decoderStart (sDecoder* d, int (*fn)(void*), const char* thread_name, void* arg) {
+
+  packet_queue_start (d->queue);
+
+  d->decoder_tid = SDL_CreateThread (fn, thread_name, arg);
+  if (!d->decoder_tid) {
+    //{{{  error return
+    av_log (NULL, AV_LOG_ERROR, "SDL_CreateThread(): %s\n", SDL_GetError());
+    return AVERROR(ENOMEM);
+    }
+    //}}}
+
+  return 0;
+  }
+//}}}
+//{{{
+int decodeFrame (sDecoder* decoder, AVFrame* frame, AVSubtitle *sub) {
+
+  int ret = AVERROR(EAGAIN);
+
+  for (;;) {
+    if (decoder->queue->serial == decoder->pkt_serial) {
+      do {
+        if (decoder->queue->abort_request)
+          return -1;
+
+        switch (decoder->avctx->codec_type) {
+          //{{{
+          case AVMEDIA_TYPE_VIDEO:
+            ret = avcodec_receive_frame(decoder->avctx, frame);
+            if (ret >= 0) {
+              if (decoder_reorder_pts == -1)
+                frame->pts = frame->best_effort_timestamp;
+              else if (!decoder_reorder_pts)
+                frame->pts = frame->pkt_dts;
+              }
+            break;
+          //}}}
+          //{{{
+          case AVMEDIA_TYPE_AUDIO:
+            ret = avcodec_receive_frame (decoder->avctx, frame);
+            if (ret >= 0) {
+              AVRational tb = {1, frame->sample_rate};
+              if (frame->pts != AV_NOPTS_VALUE)
+                frame->pts = av_rescale_q (frame->pts, decoder->avctx->pkt_timebase, tb);
+              else if (decoder->next_pts != AV_NOPTS_VALUE)
+                frame->pts = av_rescale_q (decoder->next_pts, decoder->next_pts_tb, tb);
+
+              if (frame->pts != AV_NOPTS_VALUE) {
+                decoder->next_pts = frame->pts + frame->nb_samples;
+                decoder->next_pts_tb = tb;
+                }
+              }
+            break;
+          //}}}
+          }
+        if (ret == AVERROR_EOF) {
+          //{{{  end of file, return
+          decoder->finished = decoder->pkt_serial;
+          avcodec_flush_buffers (decoder->avctx);
+          return 0;
+          }
+          //}}}
+        if (ret >= 0)
+          return 1;
+        } while (ret != AVERROR(EAGAIN));
+      }
+
+    do {
+      if (decoder->queue->nb_packets == 0)
+        SDL_CondSignal (decoder->empty_queue_cond);
+      if (decoder->packet_pending)
+        decoder->packet_pending = 0;
+      else {
+        int old_serial = decoder->pkt_serial;
+        if (packet_queue_get (decoder->queue, decoder->pkt, 1, &decoder->pkt_serial) < 0)
+          return -1;
+        if (old_serial != decoder->pkt_serial) {
+          avcodec_flush_buffers (decoder->avctx);
+          decoder->finished = 0;
+          decoder->next_pts = decoder->start_pts;
+          decoder->next_pts_tb = decoder->start_pts_tb;
+          }
+        }
+      if (decoder->queue->serial == decoder->pkt_serial)
+        break;
+
+      av_packet_unref (decoder->pkt);
+      } while (1);
+
+    if (decoder->avctx->codec_type == AVMEDIA_TYPE_SUBTITLE) {
+      //{{{  subtitle
+      int gotFrame = 0;
+      ret = avcodec_decode_subtitle2 (decoder->avctx, sub, &gotFrame, decoder->pkt);
+      if (ret < 0)
+        ret = AVERROR(EAGAIN);
+      else {
+        if (gotFrame && !decoder->pkt->data)
+          decoder->packet_pending = 1;
+        ret = gotFrame ? 0 : (decoder->pkt->data ? AVERROR(EAGAIN) : AVERROR_EOF);
+        }
+      av_packet_unref (decoder->pkt);
+      }
+      //}}}
+    else {
+      //{{{  audio, video
+      if (decoder->pkt->buf && !decoder->pkt->opaque_ref) {
+        sFrameData* fd;
+        decoder->pkt->opaque_ref = av_buffer_allocz (sizeof(*fd));
+        if (!decoder->pkt->opaque_ref)
+          return AVERROR(ENOMEM);
+        fd = (sFrameData*)decoder->pkt->opaque_ref->data;
+        fd->pkt_pos = decoder->pkt->pos;
+        }
+
+      if (avcodec_send_packet (decoder->avctx, decoder->pkt) == AVERROR(EAGAIN)) {
+        av_log (decoder->avctx, AV_LOG_ERROR, "Receive_frame and send_packet both returned EAGAIN, which is an API violation.\n");
+        decoder->packet_pending = 1;
+        }
+      else
+        av_packet_unref (decoder->pkt);
+      }
+      //}}}
+    }
+  }
+//}}}
 
 //{{{
 class sVideoState {
@@ -1317,66 +1522,6 @@ public:
   };
 //}}}
 
-//{{{  options vars
-static const AVInputFormat* gInputFileFormat;
-static const char* gFilename;
-static const char* gWindowTitle;
-
-static int default_width  = 640;
-static int default_height = 480;
-static int screen_width  = 0;
-static int screen_height = 0;
-static int screen_left = SDL_WINDOWPOS_CENTERED;
-static int screen_top = SDL_WINDOWPOS_CENTERED;
-
-static int gAudioDisable;
-static int gVideoDisable;
-static int gSubtitleDisable;
-
-static const char* wanted_stream_spec[AVMEDIA_TYPE_NB] = {0};
-static int seek_by_bytes = -1;
-static float seek_interval = 10;
-static int gDisplayDisable;
-static int gBorderless;
-static int alwaysontop;
-
-static int show_status = -1;
-
-static int startup_volume = 100;
-static int av_sync_type = AV_SYNC_AUDIO_MASTER;
-static int64_t gStartTime = AV_NOPTS_VALUE;
-static int64_t gDuration = AV_NOPTS_VALUE;
-
-static int fast = 0;
-static int genpts = 0;
-static int lowres = 0;
-static int decoder_reorder_pts = -1;
-
-static int autoexit;
-static int gExitOnKeydown;
-static int exit_on_mousedown;
-
-static int loop = 1;
-static int framedrop = -1;
-static int infinite_buffer = -1;
-
-static enum eShowMode show_mode = SHOW_MODE_NONE;
-static const char* audio_codec_name;
-static const char* subtitle_codec_name;
-static const char* video_codec_name;
-double rdftspeed = 0.02;
-
-static int64_t cursor_last_shown;
-static int cursor_hidden = 0;
-
-static const char** vfilters_list = NULL;
-static int nb_vfilters = 0;
-static char* afilters = NULL;
-
-static int autorotate = 1;
-static int find_stream_info = 1;
-static int filter_nbthreads = 0;
-//}}}
 //{{{  video
 //{{{
 void calculateDisplayRect (SDL_Rect* rect,
@@ -2395,117 +2540,6 @@ fail:
   return ret;
   }
 //}}}
-//{{{
-int decodeFrame (sDecoder* decoder, AVFrame* frame, AVSubtitle *sub) {
-
-  int ret = AVERROR(EAGAIN);
-
-  for (;;) {
-    if (decoder->queue->serial == decoder->pkt_serial) {
-      do {
-        if (decoder->queue->abort_request)
-          return -1;
-
-        switch (decoder->avctx->codec_type) {
-          //{{{
-          case AVMEDIA_TYPE_VIDEO:
-            ret = avcodec_receive_frame(decoder->avctx, frame);
-            if (ret >= 0) {
-              if (decoder_reorder_pts == -1)
-                frame->pts = frame->best_effort_timestamp;
-              else if (!decoder_reorder_pts)
-                frame->pts = frame->pkt_dts;
-              }
-            break;
-          //}}}
-          //{{{
-          case AVMEDIA_TYPE_AUDIO:
-            ret = avcodec_receive_frame (decoder->avctx, frame);
-            if (ret >= 0) {
-              AVRational tb = {1, frame->sample_rate};
-              if (frame->pts != AV_NOPTS_VALUE)
-                frame->pts = av_rescale_q (frame->pts, decoder->avctx->pkt_timebase, tb);
-              else if (decoder->next_pts != AV_NOPTS_VALUE)
-                frame->pts = av_rescale_q (decoder->next_pts, decoder->next_pts_tb, tb);
-
-              if (frame->pts != AV_NOPTS_VALUE) {
-                decoder->next_pts = frame->pts + frame->nb_samples;
-                decoder->next_pts_tb = tb;
-                }
-              }
-            break;
-          //}}}
-          }
-        if (ret == AVERROR_EOF) {
-          //{{{  end of file, return
-          decoder->finished = decoder->pkt_serial;
-          avcodec_flush_buffers (decoder->avctx);
-          return 0;
-          }
-          //}}}
-        if (ret >= 0)
-          return 1;
-        } while (ret != AVERROR(EAGAIN));
-      }
-
-    do {
-      if (decoder->queue->nb_packets == 0)
-        SDL_CondSignal (decoder->empty_queue_cond);
-      if (decoder->packet_pending)
-        decoder->packet_pending = 0;
-      else {
-        int old_serial = decoder->pkt_serial;
-        if (packet_queue_get (decoder->queue, decoder->pkt, 1, &decoder->pkt_serial) < 0)
-          return -1;
-        if (old_serial != decoder->pkt_serial) {
-          avcodec_flush_buffers (decoder->avctx);
-          decoder->finished = 0;
-          decoder->next_pts = decoder->start_pts;
-          decoder->next_pts_tb = decoder->start_pts_tb;
-          }
-        }
-      if (decoder->queue->serial == decoder->pkt_serial)
-        break;
-
-      av_packet_unref (decoder->pkt);
-      } while (1);
-
-    if (decoder->avctx->codec_type == AVMEDIA_TYPE_SUBTITLE) {
-      //{{{  subtitle
-      int gotFrame = 0;
-      ret = avcodec_decode_subtitle2 (decoder->avctx, sub, &gotFrame, decoder->pkt);
-      if (ret < 0)
-        ret = AVERROR(EAGAIN);
-      else {
-        if (gotFrame && !decoder->pkt->data)
-          decoder->packet_pending = 1;
-        ret = gotFrame ? 0 : (decoder->pkt->data ? AVERROR(EAGAIN) : AVERROR_EOF);
-        }
-      av_packet_unref (decoder->pkt);
-      }
-      //}}}
-    else {
-      //{{{  audio, video
-      if (decoder->pkt->buf && !decoder->pkt->opaque_ref) {
-        sFrameData* fd;
-        decoder->pkt->opaque_ref = av_buffer_allocz (sizeof(*fd));
-        if (!decoder->pkt->opaque_ref)
-          return AVERROR(ENOMEM);
-        fd = (sFrameData*)decoder->pkt->opaque_ref->data;
-        fd->pkt_pos = decoder->pkt->pos;
-        }
-
-      if (avcodec_send_packet (decoder->avctx, decoder->pkt) == AVERROR(EAGAIN)) {
-        av_log (decoder->avctx, AV_LOG_ERROR, "Receive_frame and send_packet both returned EAGAIN, which is an API violation.\n");
-        decoder->packet_pending = 1;
-        }
-      else
-        av_packet_unref (decoder->pkt);
-      }
-      //}}}
-    }
-  }
-//}}}
 
 //{{{
 int configureVideoFilters (AVFilterGraph* graph, sVideoState* videoState, const char* filters, AVFrame* frame) {
@@ -2983,39 +3017,6 @@ int subtitleThread (void* arg) {
 //}}}
 
 // decoder
-//{{{
-int decoderInit (sDecoder* d, AVCodecContext* avctx, sPacketQueue* queue, SDL_cond *empty_queue_cond) {
-
-  memset (d, 0, sizeof(sDecoder));
-
-  d->pkt = av_packet_alloc();
-  if (!d->pkt)
-    return AVERROR(ENOMEM);
-  d->avctx = avctx;
-  d->queue = queue;
-  d->empty_queue_cond = empty_queue_cond;
-  d->start_pts = AV_NOPTS_VALUE;
-  d->pkt_serial = -1;
-
-  return 0;
-  }
-//}}}
-//{{{
-int decoderStart (sDecoder* d, int (*fn)(void*), const char* thread_name, void* arg) {
-
-  packet_queue_start (d->queue);
-
-  d->decoder_tid = SDL_CreateThread (fn, thread_name, arg);
-  if (!d->decoder_tid) {
-    //{{{  error return
-    av_log (NULL, AV_LOG_ERROR, "SDL_CreateThread(): %s\n", SDL_GetError());
-    return AVERROR(ENOMEM);
-    }
-    //}}}
-
-  return 0;
-  }
-//}}}
 //{{{  event handlers
 //{{{
 void streamSeek (sVideoState* videoState, int64_t pos, int64_t rel, int by_bytes) {
