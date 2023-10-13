@@ -511,6 +511,136 @@ public:
 //{{{
 class sVideoState {
 public:
+  //{{{
+  int get_master_sync_type() {
+
+    if (av_sync_type == AV_SYNC_VIDEO_MASTER) {
+      if (videoStream)
+        return AV_SYNC_VIDEO_MASTER;
+      else
+       return AV_SYNC_AUDIO_MASTER;
+      }
+
+    else if (av_sync_type == AV_SYNC_AUDIO_MASTER) {
+      if (audioStream)
+        return AV_SYNC_AUDIO_MASTER;
+      else
+        return AV_SYNC_EXTERNAL_CLOCK;
+      }
+
+    else
+      return AV_SYNC_EXTERNAL_CLOCK;
+    }
+  //}}}
+  //{{{
+  /* get the clockurrent master clocklock value */
+  double get_master_clock() {
+
+    double val;
+
+    switch (get_master_sync_type()) {
+      case AV_SYNC_VIDEO_MASTER:
+        val = vidclk.get_clock();
+        break;
+
+      case AV_SYNC_AUDIO_MASTER:
+        val = audclk.get_clock();
+        break;
+
+      default:
+        val = extclk.get_clock();
+        break;
+      }
+
+    return val;
+    }
+  //}}}
+  //{{{
+  void check_external_clock_speed() {
+
+    if (videoStreamId >= 0 && videoq.nb_packets <= EXTERNAL_CLOCK_MIN_FRAMES ||
+        audioStreamId >= 0 && audioq.nb_packets <= EXTERNAL_CLOCK_MIN_FRAMES)
+      extclk.set_clock_speed (FFMAX(EXTERNAL_CLOCK_SPEED_MIN, extclk.speed - EXTERNAL_CLOCK_SPEED_STEP));
+
+    else if ((videoStreamId < 0 || videoq.nb_packets > EXTERNAL_CLOCK_MAX_FRAMES) &&
+             (audioStreamId < 0 || audioq.nb_packets > EXTERNAL_CLOCK_MAX_FRAMES))
+      extclk.set_clock_speed (FFMIN(EXTERNAL_CLOCK_SPEED_MAX, extclk.speed + EXTERNAL_CLOCK_SPEED_STEP));
+
+    else {
+      double speed = extclk.speed;
+      if (speed != 1.0)
+        extclk.set_clock_speed (speed + EXTERNAL_CLOCK_SPEED_STEP * (1.0 - speed) / fabs(1.0 - speed));
+      }
+    }
+  //}}}
+
+  //{{{
+  void update_sample_display (short* samples, int samples_size) {
+  /* copy samples for viewing in editor window */
+
+    int size, len;
+
+    size = samples_size / sizeof(short);
+    while (size > 0) {
+      len = SAMPLE_ARRAY_SIZE - sample_array_index;
+      if (len > size)
+        len = size;
+
+      memcpy (sample_array + sample_array_index, samples, len * sizeof(short));
+      samples += len;
+      sample_array_index += len;
+      if (sample_array_index >= SAMPLE_ARRAY_SIZE)
+        sample_array_index = 0;
+      size -= len;
+      }
+    }
+  //}}}
+  //{{{
+  int synchronizeAudio (int nb_samples) {
+  /* return the wanted number of samples to get better sync if sync_type is video
+   * or external master clock */
+
+    int wanted_nb_samples = nb_samples;
+
+    /* if not master, then we try to remove or add samples to correct the clock */
+    if (get_master_sync_type () != AV_SYNC_AUDIO_MASTER) {
+      double diff, avg_diff;
+      int min_nb_samples, max_nb_samples;
+
+      diff = audclk.get_clock() - get_master_clock();
+
+      if (!isnan (diff) && fabs (diff) < AV_NOSYNC_THRESHOLD) {
+        audio_diff_cum = diff + audio_diff_avg_coef * audio_diff_cum;
+        if (audio_diff_avg_count < AUDIO_DIFF_AVG_NB)
+          /* not enough measures to have a correct estimate */
+          audio_diff_avg_count++;
+        else {
+          /* estimate the A-V difference */
+          avg_diff = audio_diff_cum * (1.0 - audio_diff_avg_coef);
+
+          if (fabs(avg_diff) >= audio_diff_threshold) {
+            wanted_nb_samples = nb_samples + (int)(diff * audio_src.freq);
+            min_nb_samples = ((nb_samples * (100 - SAMPLE_CORRECTION_PERCENT_MAX) / 100));
+            max_nb_samples = ((nb_samples * (100 + SAMPLE_CORRECTION_PERCENT_MAX) / 100));
+            wanted_nb_samples = av_clip(wanted_nb_samples, min_nb_samples, max_nb_samples);
+            }
+
+          av_log (NULL, AV_LOG_TRACE, "diff=%f adiff=%f sample_diff=%d apts=%0.3f %f\n",
+                                      diff, avg_diff, wanted_nb_samples - nb_samples,
+                                      audio_clock, audio_diff_threshold);
+          }
+        }
+      else {
+        /* too big difference : may be initial PTS errors, so reset A-V filter */
+        audio_diff_avg_count = 0;
+        audio_diff_cum = 0;
+        }
+      }
+
+    return wanted_nb_samples;
+    }
+  //}}}
+
   SDL_Thread* read_tid;
   const AVInputFormat* iformat;
   SDL_cond* continueReadThread;
@@ -1021,70 +1151,6 @@ int64_t frame_queue_last_pos (sFrameQueue* frameQueue) {
   }
 //}}}
 //}}}
-//{{{  sVideoState
-//{{{
-int get_master_sync_type (sVideoState* videoState) {
-
-  if (videoState->av_sync_type == AV_SYNC_VIDEO_MASTER) {
-    if (videoState->videoStream)
-      return AV_SYNC_VIDEO_MASTER;
-    else
-     return AV_SYNC_AUDIO_MASTER;
-    }
-
-  else if (videoState->av_sync_type == AV_SYNC_AUDIO_MASTER) {
-    if (videoState->audioStream)
-      return AV_SYNC_AUDIO_MASTER;
-    else
-      return AV_SYNC_EXTERNAL_CLOCK;
-    }
-
-  else
-    return AV_SYNC_EXTERNAL_CLOCK;
-  }
-//}}}
-//{{{
-/* get the clockurrent master clocklock value */
-double get_master_clock (sVideoState* videoState) {
-
-  double val;
-
-  switch (get_master_sync_type (videoState)) {
-    case AV_SYNC_VIDEO_MASTER:
-      val = videoState->vidclk.get_clock();
-      break;
-
-    case AV_SYNC_AUDIO_MASTER:
-      val = videoState->audclk.get_clock();
-      break;
-
-    default:
-      val = videoState->extclk.get_clock();
-      break;
-    }
-
-  return val;
-  }
-//}}}
-//{{{
-void check_external_clock_speed (sVideoState* videoState) {
-
-  if (videoState->videoStreamId >= 0 && videoState->videoq.nb_packets <= EXTERNAL_CLOCK_MIN_FRAMES ||
-      videoState->audioStreamId >= 0 && videoState->audioq.nb_packets <= EXTERNAL_CLOCK_MIN_FRAMES)
-    videoState->extclk.set_clock_speed (FFMAX(EXTERNAL_CLOCK_SPEED_MIN, videoState->extclk.speed - EXTERNAL_CLOCK_SPEED_STEP));
-
-  else if ((videoState->videoStreamId < 0 || videoState->videoq.nb_packets > EXTERNAL_CLOCK_MAX_FRAMES) &&
-           (videoState->audioStreamId < 0 || videoState->audioq.nb_packets > EXTERNAL_CLOCK_MAX_FRAMES))
-    videoState->extclk.set_clock_speed (FFMIN(EXTERNAL_CLOCK_SPEED_MAX, videoState->extclk.speed + EXTERNAL_CLOCK_SPEED_STEP));
-
-  else {
-    double speed = videoState->extclk.speed;
-    if (speed != 1.0)
-      videoState->extclk.set_clock_speed (speed + EXTERNAL_CLOCK_SPEED_STEP * (1.0 - speed) / fabs(1.0 - speed));
-    }
-  }
-//}}}
-//}}}
 //{{{  audio
 //{{{
 int compareAudioFormats (enum AVSampleFormat fmt1, int64_t channel_count1,
@@ -1098,72 +1164,6 @@ int compareAudioFormats (enum AVSampleFormat fmt1, int64_t channel_count1,
   }
 //}}}
 
-//{{{
-void update_sample_display (sVideoState* videoState, short* samples, int samples_size) {
-/* copy samples for viewing in editor window */
-
-  int size, len;
-
-  size = samples_size / sizeof(short);
-  while (size > 0) {
-    len = SAMPLE_ARRAY_SIZE - videoState->sample_array_index;
-    if (len > size)
-      len = size;
-
-    memcpy (videoState->sample_array + videoState->sample_array_index, samples, len * sizeof(short));
-    samples += len;
-    videoState->sample_array_index += len;
-    if (videoState->sample_array_index >= SAMPLE_ARRAY_SIZE)
-      videoState->sample_array_index = 0;
-    size -= len;
-    }
-  }
-//}}}
-//{{{
-int synchronize_audio (sVideoState* videoState, int nb_samples) {
-/* return the wanted number of samples to get better sync if sync_type is video
- * or external master clock */
-
-  int wanted_nb_samples = nb_samples;
-
-  /* if not master, then we try to remove or add samples to correct the clock */
-  if (get_master_sync_type (videoState) != AV_SYNC_AUDIO_MASTER) {
-    double diff, avg_diff;
-    int min_nb_samples, max_nb_samples;
-
-    diff = videoState->audclk.get_clock() - get_master_clock(videoState);
-
-    if (!isnan (diff) && fabs (diff) < AV_NOSYNC_THRESHOLD) {
-      videoState->audio_diff_cum = diff + videoState->audio_diff_avg_coef * videoState->audio_diff_cum;
-      if (videoState->audio_diff_avg_count < AUDIO_DIFF_AVG_NB)
-        /* not enough measures to have a correct estimate */
-        videoState->audio_diff_avg_count++;
-      else {
-        /* estimate the A-V difference */
-        avg_diff = videoState->audio_diff_cum * (1.0 - videoState->audio_diff_avg_coef);
-
-        if (fabs(avg_diff) >= videoState->audio_diff_threshold) {
-          wanted_nb_samples = nb_samples + (int)(diff * videoState->audio_src.freq);
-          min_nb_samples = ((nb_samples * (100 - SAMPLE_CORRECTION_PERCENT_MAX) / 100));
-          max_nb_samples = ((nb_samples * (100 + SAMPLE_CORRECTION_PERCENT_MAX) / 100));
-          wanted_nb_samples = av_clip(wanted_nb_samples, min_nb_samples, max_nb_samples);
-          }
-
-        av_log (NULL, AV_LOG_TRACE, "diff=%f adiff=%f sample_diff=%d apts=%0.3f %f\n",
-                                    diff, avg_diff, wanted_nb_samples - nb_samples,
-                                    videoState->audio_clock, videoState->audio_diff_threshold);
-        }
-      }
-    else {
-      /* too big difference : may be initial PTS errors, so reset A-V filter */
-      videoState->audio_diff_avg_count = 0;
-      videoState->audio_diff_cum = 0;
-      }
-    }
-
-  return wanted_nb_samples;
-  }
-//}}}
 //{{{
 int audioDecodeFrame (sVideoState* videoState) {
 // Decode one audio frame and return its uncompressed size.
@@ -1194,7 +1194,7 @@ int audioDecodeFrame (sVideoState* videoState) {
                                               audioFrame->frame->nb_samples,
                                               (AVSampleFormat)(audioFrame->frame->format), 1);
 
-  int wanted_nb_samples = synchronize_audio (videoState, audioFrame->frame->nb_samples);
+  int wanted_nb_samples = videoState->synchronizeAudio (audioFrame->frame->nb_samples);
 
   if (audioFrame->frame->format != videoState->audio_src.fmt ||
       av_channel_layout_compare (&audioFrame->frame->ch_layout, &videoState->audio_src.ch_layout) ||
@@ -1306,7 +1306,7 @@ void sdlAudioCallback (void* opaque, Uint8* stream, int len) {
         }
       else {
         if (videoState->show_mode != SHOW_MODE_VIDEO)
-         update_sample_display (videoState, (int16_t*)videoState->audio_buf, audio_size);
+          videoState->update_sample_display ((int16_t*)videoState->audio_buf, audio_size);
         videoState->audio_buf_size = audio_size;
         }
       videoState->audio_buf_index = 0;
@@ -1896,9 +1896,9 @@ double compute_target_delay (double delay, sVideoState* videoState) {
   double sync_threshold, diff = 0;
 
   /* update delay to follow master synchronisation source */
-  if (get_master_sync_type (videoState) != AV_SYNC_VIDEO_MASTER) {
+  if (videoState->get_master_sync_type () != AV_SYNC_VIDEO_MASTER) {
     /* if video is slave, we try to correct big delays by duplicating or deleting a frame */
-    diff = videoState->vidclk.get_clock () - get_master_clock (videoState);
+    diff = videoState->vidclk.get_clock () - videoState->get_master_clock ();
 
     /* skip or repeat frame. We take into account the
        delay to compute the threshold. I still don't know if it is the best guess */
@@ -1980,8 +1980,8 @@ void videoRefresh (void* opaque, double* remaining_time) {
 
   sVideoState* videoState = (sVideoState*)opaque;
 
-  if (!videoState->paused && get_master_sync_type (videoState) == AV_SYNC_EXTERNAL_CLOCK && videoState->realtime)
-    check_external_clock_speed (videoState);
+  if (!videoState->paused && videoState->get_master_sync_type () == AV_SYNC_EXTERNAL_CLOCK && videoState->realtime)
+    videoState->check_external_clock_speed ();
 
   double time;
   if (!gDisplayDisable && videoState->show_mode != SHOW_MODE_VIDEO && videoState->audioStream) {
@@ -2035,7 +2035,7 @@ retry:
       if (frame_queue_nb_remaining (&videoState->pictq) > 1) {
         sFrame* nextvp = frame_queue_peek_next (&videoState->pictq);
         double duration = vp_duration (videoState, vp, nextvp);
-        if (!videoState->step && (framedrop>0 || (framedrop && get_master_sync_type (videoState) != AV_SYNC_VIDEO_MASTER))
+        if (!videoState->step && (framedrop>0 || (framedrop && videoState->get_master_sync_type () != AV_SYNC_VIDEO_MASTER))
             && time > videoState->frame_timer + duration) {
           videoState->frame_drops_late++;
           frame_queue_next (&videoState->pictq);
@@ -2115,14 +2115,14 @@ retry:
       if (videoState->audioStream && videoState->videoStream)
         av_diff = videoState->audclk.get_clock () - videoState->vidclk.get_clock();
       else if (videoState->videoStream)
-        av_diff = get_master_clock (videoState) - videoState->vidclk.get_clock();
+        av_diff = videoState->get_master_clock () - videoState->vidclk.get_clock();
       else if (videoState->audioStream)
-        av_diff = get_master_clock (videoState) - videoState->audclk.get_clock();
+        av_diff = videoState->get_master_clock () - videoState->audclk.get_clock();
 
       av_bprint_init (&buf, 0, AV_BPRINT_SIZE_AUTOMATIC);
       av_bprintf (&buf,
                  "%7.2f %s:%7.3f fd=%4d aq=%5dKB vq=%5dKB sq=%5dB f=%d/%d   \r",
-                 (float)get_master_clock (videoState),
+                 (float)videoState->get_master_clock (),
                  (videoState->audioStream && videoState->videoStream) ? "A-V" : (videoState->videoStream ? "M-V" : (videoState->audioStream ? "M-A" : "   ")),
                  av_diff,
                  videoState->frame_drops_early + videoState->frame_drops_late,
@@ -2641,9 +2641,9 @@ int getVideoFrame (sVideoState* videoState, AVFrame* frame) {
 
     frame->sample_aspect_ratio = av_guess_sample_aspect_ratio (videoState->formatContext, videoState->videoStream, frame);
 
-    if (framedrop >0  || (framedrop && get_master_sync_type (videoState) != AV_SYNC_VIDEO_MASTER)) {
+    if (framedrop >0  || (framedrop && videoState->get_master_sync_type () != AV_SYNC_VIDEO_MASTER)) {
       if (frame->pts != AV_NOPTS_VALUE) {
-        double diff = dpts - get_master_clock (videoState);
+        double diff = dpts - videoState->get_master_clock ();
         if (!isnan (diff) && fabs (diff) < AV_NOSYNC_THRESHOLD &&
             diff - videoState->frame_last_filter_delay < 0 &&
             videoState->viddec.pkt_serial == videoState->vidclk.serial &&
@@ -3032,7 +3032,7 @@ void streamSeek (sVideoState* videoState, int64_t pos, int64_t rel, int by_bytes
 //{{{
 void seekChapter (sVideoState* videoState, int incr) {
 
-  int64_t pos = (int64_t)get_master_clock (videoState) * AV_TIME_BASE;
+  int64_t pos = (int64_t)videoState->get_master_clock () * AV_TIME_BASE;
 
   if (!videoState->formatContext->nb_chapters)
     return;
@@ -3960,7 +3960,7 @@ void eventLoop (sVideoState* videoState) {
               streamSeek (videoState, (int64_t)pos, (int64_t)incr, 1);
               }
             else {
-              pos = get_master_clock (videoState);
+              pos = videoState->get_master_clock ();
               if (isnan(pos))
                  pos = (double)videoState->seek_pos / AV_TIME_BASE;
               pos += incr;
