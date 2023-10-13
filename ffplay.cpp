@@ -1075,6 +1075,188 @@ int decodeFrame (sDecoder* decoder, AVFrame* frame, AVSubtitle *sub) {
   }
 //}}}
 
+//  video
+//{{{
+void calculateDisplayRect (SDL_Rect* rect,
+                           int scr_xleft, int scr_ytop, int scr_width, int scr_height,
+                           int pic_width, int pic_height, AVRational pic_sar) {
+
+  AVRational aspect_ratio = pic_sar;
+
+  if (av_cmp_q (aspect_ratio, av_make_q (0, 1)) <= 0)
+    aspect_ratio = av_make_q (1, 1);
+
+  aspect_ratio = av_mul_q (aspect_ratio, av_make_q(pic_width, pic_height));
+
+  /* XXX: we suppose the screen has a 1.0 pixel ratio */
+  int height = scr_height;
+  int width = av_rescale (height, aspect_ratio.num, aspect_ratio.den) & ~1;
+  if (width > scr_width) {
+    width = scr_width;
+    height = av_rescale (width, aspect_ratio.den, aspect_ratio.num) & ~1;
+    }
+
+  int x = (scr_width - width) / 2;
+  int y = (scr_height - height) / 2;
+  rect->x = scr_xleft + x;
+  rect->y = scr_ytop  + y;
+  rect->w = FFMAX((int)width,  1);
+  rect->h = FFMAX((int)height, 1);
+  }
+//}}}
+//{{{
+void drawRectangle (int x, int y, int width, int height) {
+
+  SDL_Rect rect;
+  rect.x = x;
+  rect.y = y;
+  rect.w = width;
+  rect.h = height;
+
+  if (width && height)
+    SDL_RenderFillRect (gRenderer, &rect);
+  }
+//}}}
+//{{{
+void setSdlYuvConversionMode (AVFrame* frame) {
+
+  SDL_YUV_CONVERSION_MODE mode = SDL_YUV_CONVERSION_AUTOMATIC;
+
+  if (frame && (frame->format == AV_PIX_FMT_YUV420P
+                || frame->format == AV_PIX_FMT_YUYV422
+                || frame->format == AV_PIX_FMT_UYVY422)) {
+    if (frame->color_range == AVCOL_RANGE_JPEG)
+       mode = SDL_YUV_CONVERSION_JPEG;
+    else if (frame->colorspace == AVCOL_SPC_BT709)
+      mode = SDL_YUV_CONVERSION_BT709;
+    else if (frame->colorspace == AVCOL_SPC_BT470BG || frame->colorspace == AVCOL_SPC_SMPTE170M)
+      mode = SDL_YUV_CONVERSION_BT601;
+    }
+
+  SDL_SetYUVConversionMode (mode); /* FIXME: no support for linear transfer */
+  }
+//}}}
+//{{{
+void getSdlPixfmtAndBlendmode (int format, Uint32* sdl_pix_fmt, SDL_BlendMode* sdl_blendmode) {
+
+  *sdl_blendmode = SDL_BLENDMODE_NONE;
+  if (format == AV_PIX_FMT_RGB32   ||
+      format == AV_PIX_FMT_RGB32_1 ||
+      format == AV_PIX_FMT_BGR32   ||
+      format == AV_PIX_FMT_BGR32_1)
+    *sdl_blendmode = SDL_BLENDMODE_BLEND;
+
+  *sdl_pix_fmt = SDL_PIXELFORMAT_UNKNOWN;
+  for (int i = 0; i < FF_ARRAY_ELEMS (sdlTextureFormatMap) - 1; i++) {
+    if (format == sdlTextureFormatMap[i].format) {
+      *sdl_pix_fmt = sdlTextureFormatMap[i].texture_fmt;
+      return;
+      }
+    }
+  }
+//}}}
+//{{{
+int reallocTexture (SDL_Texture** texture, Uint32 new_format,
+                            int new_width, int new_height, SDL_BlendMode blendmode, int initTexture) {
+
+  Uint32 format;
+  int access, w, h;
+  if (!*texture
+      || SDL_QueryTexture (*texture, &format, &access, &w, &h) < 0
+      || new_width != w || new_height != h
+      || new_format != format) {
+
+    if (*texture)
+      SDL_DestroyTexture (*texture);
+
+    if (!(*texture = SDL_CreateTexture (gRenderer, new_format, SDL_TEXTUREACCESS_STREAMING, new_width, new_height)))
+      return -1;
+
+    if (SDL_SetTextureBlendMode (*texture, blendmode) < 0)
+      return -1;
+
+    if (initTexture) {
+      void* pixels;
+      int pitch;
+      if (SDL_LockTexture (*texture, NULL, &pixels, &pitch) < 0)
+        return -1;
+
+      memset (pixels, 0, pitch * new_height);
+      SDL_UnlockTexture (*texture);
+      }
+
+    av_log (NULL, AV_LOG_VERBOSE, "Created %dx%d texture with %s.\n", new_width, new_height, SDL_GetPixelFormatName(new_format));
+    }
+
+  return 0;
+  }
+//}}}
+//{{{
+int uploadTexture (SDL_Texture** tex, AVFrame* frame) {
+
+  Uint32 sdl_pix_fmt;
+  SDL_BlendMode sdl_blendmode;
+  getSdlPixfmtAndBlendmode (frame->format, &sdl_pix_fmt, &sdl_blendmode);
+
+  if (reallocTexture (tex, sdl_pix_fmt == SDL_PIXELFORMAT_UNKNOWN ? SDL_PIXELFORMAT_ARGB8888 : sdl_pix_fmt,
+                      frame->width, frame->height, sdl_blendmode, 0) < 0)
+    return -1;
+
+  int ret = 0;
+  switch (sdl_pix_fmt) {
+    case SDL_PIXELFORMAT_IYUV:
+      if (frame->linesize[0] > 0 && frame->linesize[1] > 0 && frame->linesize[2] > 0)
+        ret = SDL_UpdateYUVTexture (*tex, NULL,
+                                    frame->data[0], frame->linesize[0],
+                                    frame->data[1], frame->linesize[1],
+                                    frame->data[2], frame->linesize[2]);
+      else if (frame->linesize[0] < 0 && frame->linesize[1] < 0 && frame->linesize[2] < 0)
+        ret = SDL_UpdateYUVTexture (*tex, NULL,
+                                    frame->data[0] + frame->linesize[0] * (frame->height - 1), -frame->linesize[0],
+                                    frame->data[1] + frame->linesize[1] * (AV_CEIL_RSHIFT(frame->height, 1) - 1), -frame->linesize[1],
+                                    frame->data[2] + frame->linesize[2] * (AV_CEIL_RSHIFT(frame->height, 1) - 1), -frame->linesize[2]);
+      else {
+        av_log (NULL, AV_LOG_ERROR, "Mixed negative and positive linesizes are not supported.\n");
+        return -1;
+        }
+      break;
+
+    default:
+      if (frame->linesize[0] < 0)
+        ret = SDL_UpdateTexture (*tex, NULL,
+                                 frame->data[0] + frame->linesize[0] * (frame->height - 1),
+                                 -frame->linesize[0]);
+      else
+        ret = SDL_UpdateTexture (*tex, NULL,
+                                 frame->data[0],
+                                 frame->linesize[0]);
+      break;
+    }
+
+  return ret;
+  }
+//}}}
+//{{{
+int computeMod (int a, int b) {
+  return a < 0 ? a%b + b : a%b;
+  }
+//}}}
+//{{{
+void set_default_window_size (int width, int height, AVRational sar) {
+
+  SDL_Rect rect;
+  int max_width  = screen_width  ? screen_width  : INT_MAX;
+  int max_height = screen_height ? screen_height : INT_MAX;
+  if (max_width == INT_MAX && max_height == INT_MAX)
+    max_height = height;
+
+  calculateDisplayRect (&rect, 0, 0, max_width, max_height, width, height, sar);
+
+  default_width = rect.w;
+  default_height = rect.h;
+  }
+//}}}
+
 //{{{
 class sVideoState {
 public:
@@ -1521,161 +1703,32 @@ public:
   int step;
   };
 //}}}
-
-//{{{  video
 //{{{
-void calculateDisplayRect (SDL_Rect* rect,
-                                    int scr_xleft, int scr_ytop, int scr_width, int scr_height,
-                                    int pic_width, int pic_height, AVRational pic_sar) {
+double compute_target_delay (double delay, sVideoState* videoState) {
 
-  AVRational aspect_ratio = pic_sar;
-  int width, height, x, y;
+  double sync_threshold, diff = 0;
 
-  if (av_cmp_q (aspect_ratio, av_make_q (0, 1)) <= 0)
-    aspect_ratio = av_make_q (1, 1);
+  /* update delay to follow master synchronisation source */
+  if (videoState->get_master_sync_type () != AV_SYNC_VIDEO_MASTER) {
+    /* if video is slave, we try to correct big delays by duplicating or deleting a frame */
+    diff = videoState->vidclk.get_clock () - videoState->get_master_clock ();
 
-  aspect_ratio = av_mul_q (aspect_ratio, av_make_q(pic_width, pic_height));
-
-  /* XXX: we suppose the screen has a 1.0 pixel ratio */
-  height = scr_height;
-  width = av_rescale (height, aspect_ratio.num, aspect_ratio.den) & ~1;
-  if (width > scr_width) {
-    width = scr_width;
-    height = av_rescale (width, aspect_ratio.den, aspect_ratio.num) & ~1;
-    }
-
-  x = (scr_width - width) / 2;
-  y = (scr_height - height) / 2;
-  rect->x = scr_xleft + x;
-  rect->y = scr_ytop  + y;
-  rect->w = FFMAX((int)width,  1);
-  rect->h = FFMAX((int)height, 1);
-  }
-//}}}
-
-//{{{
-void setSdlYuvConversionMode (AVFrame* frame) {
-
-  SDL_YUV_CONVERSION_MODE mode = SDL_YUV_CONVERSION_AUTOMATIC;
-
-  if (frame && (frame->format == AV_PIX_FMT_YUV420P
-                || frame->format == AV_PIX_FMT_YUYV422
-                || frame->format == AV_PIX_FMT_UYVY422)) {
-    if (frame->color_range == AVCOL_RANGE_JPEG)
-       mode = SDL_YUV_CONVERSION_JPEG;
-    else if (frame->colorspace == AVCOL_SPC_BT709)
-      mode = SDL_YUV_CONVERSION_BT709;
-    else if (frame->colorspace == AVCOL_SPC_BT470BG || frame->colorspace == AVCOL_SPC_SMPTE170M)
-      mode = SDL_YUV_CONVERSION_BT601;
-    }
-
-  SDL_SetYUVConversionMode (mode); /* FIXME: no support for linear transfer */
-  }
-//}}}
-//{{{
-void getSdlPixfmtAndBlendmode (int format, Uint32* sdl_pix_fmt, SDL_BlendMode* sdl_blendmode) {
-
-  *sdl_blendmode = SDL_BLENDMODE_NONE;
-  if (format == AV_PIX_FMT_RGB32   ||
-      format == AV_PIX_FMT_RGB32_1 ||
-      format == AV_PIX_FMT_BGR32   ||
-      format == AV_PIX_FMT_BGR32_1)
-    *sdl_blendmode = SDL_BLENDMODE_BLEND;
-
-  *sdl_pix_fmt = SDL_PIXELFORMAT_UNKNOWN;
-  for (int i = 0; i < FF_ARRAY_ELEMS (sdlTextureFormatMap) - 1; i++) {
-    if (format == sdlTextureFormatMap[i].format) {
-      *sdl_pix_fmt = sdlTextureFormatMap[i].texture_fmt;
-      return;
+    /* skip or repeat frame. We take into account the
+       delay to compute the threshold. I still don't know if it is the best guess */
+    sync_threshold = FFMAX(AV_SYNC_THRESHOLD_MIN, FFMIN(AV_SYNC_THRESHOLD_MAX, delay));
+    if (!isnan(diff) && fabs (diff) < videoState->max_frame_duration) {
+      if (diff <= -sync_threshold)
+        delay = FFMAX(0, delay + diff);
+      else if (diff >= sync_threshold && delay > AV_SYNC_FRAMEDUP_THRESHOLD)
+        delay = delay + diff;
+      else if (diff >= sync_threshold)
+        delay = 2 * delay;
       }
     }
-  }
-//}}}
-//{{{
-int reallocTexture (SDL_Texture** texture, Uint32 new_format,
-                            int new_width, int new_height, SDL_BlendMode blendmode, int initTexture) {
 
-  Uint32 format;
-  int access, w, h;
-  if (!*texture
-      || SDL_QueryTexture (*texture, &format, &access, &w, &h) < 0
-      || new_width != w || new_height != h
-      || new_format != format) {
+  av_log (NULL, AV_LOG_TRACE, "video: delay=%0.3f A-V=%f\n", delay, -diff);
 
-    if (*texture)
-      SDL_DestroyTexture (*texture);
-
-    if (!(*texture = SDL_CreateTexture (gRenderer, new_format, SDL_TEXTUREACCESS_STREAMING, new_width, new_height)))
-      return -1;
-
-    if (SDL_SetTextureBlendMode (*texture, blendmode) < 0)
-      return -1;
-
-    if (initTexture) {
-      void* pixels;
-      int pitch;
-      if (SDL_LockTexture (*texture, NULL, &pixels, &pitch) < 0)
-        return -1;
-
-      memset (pixels, 0, pitch * new_height);
-      SDL_UnlockTexture (*texture);
-      }
-
-    av_log (NULL, AV_LOG_VERBOSE, "Created %dx%d texture with %s.\n", new_width, new_height, SDL_GetPixelFormatName(new_format));
-    }
-
-  return 0;
-  }
-//}}}
-//{{{
-int uploadTexture (SDL_Texture** tex, AVFrame* frame) {
-
-  Uint32 sdl_pix_fmt;
-  SDL_BlendMode sdl_blendmode;
-  getSdlPixfmtAndBlendmode (frame->format, &sdl_pix_fmt, &sdl_blendmode);
-
-  if (reallocTexture (tex, sdl_pix_fmt == SDL_PIXELFORMAT_UNKNOWN ? SDL_PIXELFORMAT_ARGB8888 : sdl_pix_fmt,
-                      frame->width, frame->height, sdl_blendmode, 0) < 0)
-    return -1;
-
-  int ret = 0;
-  switch (sdl_pix_fmt) {
-    case SDL_PIXELFORMAT_IYUV:
-      if (frame->linesize[0] > 0 && frame->linesize[1] > 0 && frame->linesize[2] > 0)
-        ret = SDL_UpdateYUVTexture (*tex, NULL,
-                                    frame->data[0], frame->linesize[0],
-                                    frame->data[1], frame->linesize[1],
-                                    frame->data[2], frame->linesize[2]);
-      else if (frame->linesize[0] < 0 && frame->linesize[1] < 0 && frame->linesize[2] < 0)
-        ret = SDL_UpdateYUVTexture (*tex, NULL,
-                                    frame->data[0] + frame->linesize[0] * (frame->height - 1), -frame->linesize[0],
-                                    frame->data[1] + frame->linesize[1] * (AV_CEIL_RSHIFT(frame->height, 1) - 1), -frame->linesize[1],
-                                    frame->data[2] + frame->linesize[2] * (AV_CEIL_RSHIFT(frame->height, 1) - 1), -frame->linesize[2]);
-      else {
-        av_log (NULL, AV_LOG_ERROR, "Mixed negative and positive linesizes are not supported.\n");
-        return -1;
-        }
-      break;
-
-    default:
-      if (frame->linesize[0] < 0)
-        ret = SDL_UpdateTexture (*tex, NULL,
-                                 frame->data[0] + frame->linesize[0] * (frame->height - 1),
-                                 -frame->linesize[0]);
-      else
-        ret = SDL_UpdateTexture (*tex, NULL,
-                                 frame->data[0],
-                                 frame->linesize[0]);
-      break;
-    }
-
-  return ret;
-  }
-//}}}
-
-//{{{
-int computeMod (int a, int b) {
-  return a < 0 ? a%b + b : a%b;
+  return delay;
   }
 //}}}
 //{{{
@@ -1698,20 +1751,6 @@ int videoOpen (sVideoState* videoState) {
   height = height;
 
   return 0;
-  }
-//}}}
-
-//{{{
-void drawRectangle (int x, int y, int width, int height) {
-
-  SDL_Rect rect;
-  rect.x = x;
-  rect.y = y;
-  rect.w = width;
-  rect.h = height;
-
-  if (width && height)
-    SDL_RenderFillRect (gRenderer, &rect);
   }
 //}}}
 //{{{
@@ -1971,35 +2010,6 @@ void videoDisplay (sVideoState* videoState) {
   SDL_RenderPresent (gRenderer);
   }
 //}}}
-
-//{{{
-double compute_target_delay (double delay, sVideoState* videoState) {
-
-  double sync_threshold, diff = 0;
-
-  /* update delay to follow master synchronisation source */
-  if (videoState->get_master_sync_type () != AV_SYNC_VIDEO_MASTER) {
-    /* if video is slave, we try to correct big delays by duplicating or deleting a frame */
-    diff = videoState->vidclk.get_clock () - videoState->get_master_clock ();
-
-    /* skip or repeat frame. We take into account the
-       delay to compute the threshold. I still don't know if it is the best guess */
-    sync_threshold = FFMAX(AV_SYNC_THRESHOLD_MIN, FFMIN(AV_SYNC_THRESHOLD_MAX, delay));
-    if (!isnan(diff) && fabs (diff) < videoState->max_frame_duration) {
-      if (diff <= -sync_threshold)
-        delay = FFMAX(0, delay + diff);
-      else if (diff >= sync_threshold && delay > AV_SYNC_FRAMEDUP_THRESHOLD)
-        delay = delay + diff;
-      else if (diff >= sync_threshold)
-        delay = 2 * delay;
-      }
-    }
-
-  av_log (NULL, AV_LOG_TRACE, "video: delay=%0.3f A-V=%f\n", delay, -diff);
-
-  return delay;
-  }
-//}}}
 //{{{
 double vp_duration (sVideoState* videoState, sFrame* vp, sFrame* nextvp) {
 
@@ -2023,22 +2033,6 @@ void update_video_pts (sVideoState* videoState, double pts, int serial) {
   videoState->extclk.sync_clock_to_slave (&videoState->vidclk);
   }
 //}}}
-
-//{{{
-void set_default_window_size (int width, int height, AVRational sar) {
-
-  SDL_Rect rect;
-  int max_width  = screen_width  ? screen_width  : INT_MAX;
-  int max_height = screen_height ? screen_height : INT_MAX;
-  if (max_width == INT_MAX && max_height == INT_MAX)
-    max_height = height;
-
-  calculateDisplayRect (&rect, 0, 0, max_width, max_height, width, height, sar);
-
-  default_width = rect.w;
-  default_height = rect.h;
-  }
-//}}}
 //{{{
 void stream_toggle_pause (sVideoState* videoState) {
 /* pause or resume the video */
@@ -2055,7 +2049,38 @@ void stream_toggle_pause (sVideoState* videoState) {
   videoState->paused = videoState->audclk.paused = videoState->vidclk.paused = videoState->extclk.paused = !videoState->paused;
   }
 //}}}
+//{{{
+int queuePicture (sVideoState* videoState, AVFrame* src_frame, double pts, double duration,
+                         int64_t pos, int serial) {
 
+  #if defined(DEBUG_SYNC)
+    printf ("frame_type=%c pts=%0.3f\n", av_get_picture_type_char (src_frame->pict_type), pts);
+  #endif
+
+  sFrame* vp;
+  if (!(vp = frame_queue_peek_writable (&videoState->pictq)))
+    return -1;
+
+  vp->sar = src_frame->sample_aspect_ratio;
+  vp->uploaded = 0;
+
+  vp->width = src_frame->width;
+  vp->height = src_frame->height;
+  vp->format = src_frame->format;
+
+  vp->pts = pts;
+  vp->duration = duration;
+  vp->pos = pos;
+  vp->serial = serial;
+
+  set_default_window_size (vp->width, vp->height, vp->sar);
+
+  av_frame_move_ref (vp->frame, src_frame);
+  frame_queue_push (&videoState->pictq);
+
+  return 0;
+  }
+//}}}
 //{{{
 void videoRefresh (void* opaque, double* remaining_time) {
 // called to display each frame
@@ -2228,40 +2253,8 @@ retry:
     //}}}
   }
 //}}}
-//{{{
-int queuePicture (sVideoState* videoState, AVFrame* src_frame, double pts, double duration,
-                         int64_t pos, int serial) {
 
-  #if defined(DEBUG_SYNC)
-    printf ("frame_type=%c pts=%0.3f\n", av_get_picture_type_char (src_frame->pict_type), pts);
-  #endif
-
-  sFrame* vp;
-  if (!(vp = frame_queue_peek_writable (&videoState->pictq)))
-    return -1;
-
-  vp->sar = src_frame->sample_aspect_ratio;
-  vp->uploaded = 0;
-
-  vp->width = src_frame->width;
-  vp->height = src_frame->height;
-  vp->format = src_frame->format;
-
-  vp->pts = pts;
-  vp->duration = duration;
-  vp->pos = pos;
-  vp->serial = serial;
-
-  set_default_window_size (vp->width, vp->height, vp->sar);
-
-  av_frame_move_ref (vp->frame, src_frame);
-  frame_queue_push (&videoState->pictq);
-
-  return 0;
-  }
-//}}}
-//}}}
-//{{{  audio
+//  audio
 //{{{
 int compareAudioFormats (enum AVSampleFormat fmt1, int64_t channel_count1,
                                 enum AVSampleFormat fmt2, int64_t channel_count2) {
@@ -2424,72 +2417,71 @@ int audioOpen (void* opaque, AVChannelLayout* wantedChannelLayout, int wantedSam
   return audioSpec.size;
   }
 //}}}
+
+// exit
+//{{{
+void streamClose (sVideoState* videoState) {
+
+  /* XXX: use a special url_shutdown call to abort parse cleanly */
+  videoState->abort_request = 1;
+  SDL_WaitThread (videoState->read_tid, NULL);
+
+  /* close each stream */
+  if (videoState->audioStreamId >= 0)
+    videoState->streamComponentClose (videoState->audioStreamId);
+  if (videoState->videoStreamId >= 0)
+    videoState->streamComponentClose (videoState->videoStreamId);
+  if (videoState->subtitleStreamId >= 0)
+    videoState->streamComponentClose (videoState->subtitleStreamId);
+
+  avformat_close_input (&videoState->formatContext);
+
+  packet_queue_destroy (&videoState->videoq);
+  packet_queue_destroy (&videoState->audioq);
+  packet_queue_destroy (&videoState->subtitleq);
+
+  /* free all pictures */
+  frame_queue_destroy (&videoState->pictq);
+  frame_queue_destroy (&videoState->sampq);
+  frame_queue_destroy (&videoState->subpq);
+
+  SDL_DestroyCond (videoState->continueReadThread);
+  sws_freeContext (videoState->sub_convert_ctx);
+
+  av_free (videoState->filename);
+
+  if (videoState->visTexture)
+    SDL_DestroyTexture (videoState->visTexture);
+  if (videoState->vidTexture)
+    SDL_DestroyTexture (videoState->vidTexture);
+  if (videoState->subTexture)
+    SDL_DestroyTexture (videoState->subTexture);
+  av_free (videoState);
+  }
 //}}}
-//{{{  exit
-  //{{{
-  void streamClose (sVideoState* videoState) {
+//{{{
+void do_exit (sVideoState* videoState) {
 
-    /* XXX: use a special url_shutdown call to abort parse cleanly */
-    videoState->abort_request = 1;
-    SDL_WaitThread (videoState->read_tid, NULL);
+  if (videoState)
+    streamClose (videoState);
 
-    /* close each stream */
-    if (videoState->audioStreamId >= 0)
-      videoState->streamComponentClose (videoState->audioStreamId);
-    if (videoState->videoStreamId >= 0)
-      videoState->streamComponentClose (videoState->videoStreamId);
-    if (videoState->subtitleStreamId >= 0)
-      videoState->streamComponentClose (videoState->subtitleStreamId);
+  if (gRenderer)
+    SDL_DestroyRenderer (gRenderer);
 
-    avformat_close_input (&videoState->formatContext);
+  if (gWindow)
+    SDL_DestroyWindow (gWindow);
 
-    packet_queue_destroy (&videoState->videoq);
-    packet_queue_destroy (&videoState->audioq);
-    packet_queue_destroy (&videoState->subtitleq);
+  uninit_opts();
+  av_freep (&vfilters_list);
+  avformat_network_deinit();
 
-    /* free all pictures */
-    frame_queue_destroy (&videoState->pictq);
-    frame_queue_destroy (&videoState->sampq);
-    frame_queue_destroy (&videoState->subpq);
+  if (show_status)
+    printf ("\n");
+  SDL_Quit();
 
-    SDL_DestroyCond (videoState->continueReadThread);
-    sws_freeContext (videoState->sub_convert_ctx);
-
-    av_free (videoState->filename);
-
-    if (videoState->visTexture)
-      SDL_DestroyTexture (videoState->visTexture);
-    if (videoState->vidTexture)
-      SDL_DestroyTexture (videoState->vidTexture);
-    if (videoState->subTexture)
-      SDL_DestroyTexture (videoState->subTexture);
-    av_free (videoState);
-    }
-  //}}}
-  //{{{
-  void do_exit (sVideoState* videoState) {
-
-    if (videoState)
-      streamClose (videoState);
-
-    if (gRenderer)
-      SDL_DestroyRenderer (gRenderer);
-
-    if (gWindow)
-      SDL_DestroyWindow (gWindow);
-
-    uninit_opts();
-    av_freep (&vfilters_list);
-    avformat_network_deinit();
-
-    if (show_status)
-      printf ("\n");
-    SDL_Quit();
-
-    av_log (NULL, AV_LOG_QUIET, "%s", "");
-    exit (0);
-    }
-  //}}}
+  av_log (NULL, AV_LOG_QUIET, "%s", "");
+  exit (0);
+  }
 //}}}
 
 // thread
