@@ -378,7 +378,7 @@ const struct sTextureFormatEntry {
   };
 //}}}
 //{{{  options vars
-static const AVInputFormat* gFileIformat;
+static const AVInputFormat* gInputFileFormat;
 static const char* gFilename;
 
 static const char* gWindowTitle;
@@ -439,15 +439,15 @@ static int find_stream_info = 1;
 static int filter_nbthreads = 0;
 //}}}
 //{{{  context vars
-static SDL_Window* window = NULL;
+static SDL_Window* gWindow = NULL;
 
-static SDL_Renderer* renderer = NULL;
-static SDL_RendererInfo renderer_info = {0};
+static SDL_Renderer* gRenderer = NULL;
+static SDL_RendererInfo gRendererInfo = {0};
 
-static SDL_AudioDeviceID audio_dev;
+static SDL_AudioDeviceID gAudioDevice;
+static int64_t gAudioCallbackTime = 0;
 
-static int gIsFullScreen = 0;
-static int64_t audio_callback_time = 0;
+static int gFullScreen = 0;
 //}}}
 
 //{{{  sPacketQueue
@@ -1000,7 +1000,8 @@ static int audioDecodeFrame (sVideoState* videoState) {
   do {
     #if defined(_WIN32)
       while (frame_queue_nb_remaining (&videoState->sampq) == 0) {
-        if ((av_gettime_relative() - audio_callback_time) > 1000000LL * videoState->audio_hw_buf_size / videoState->audio_tgt.bytes_per_sec / 2)
+        if ((av_gettime_relative() - gAudioCallbackTime) >
+             1000000LL * videoState->audio_hw_buf_size / videoState->audio_tgt.bytes_per_sec / 2)
           return -1;
         av_usleep (1000);
         }
@@ -1108,12 +1109,12 @@ static int audioDecodeFrame (sVideoState* videoState) {
   }
 //}}}
 //{{{
-static void sdl_audio_callback (void* opaque, Uint8* stream, int len) {
+static void sdlAudioCallback (void* opaque, Uint8* stream, int len) {
 /* prepare a new audio buffer */
 
   sVideoState* videoState = (sVideoState*)opaque;
 
-  audio_callback_time = av_gettime_relative();
+  gAudioCallbackTime = av_gettime_relative();
 
   while (len > 0) {
     if (videoState->audio_buf_index >= (int)videoState->audio_buf_size) {
@@ -1155,7 +1156,7 @@ static void sdl_audio_callback (void* opaque, Uint8* stream, int len) {
     set_clock_at (&videoState->audclk,
                   videoState->audio_clock - (double)(2 * videoState->audio_hw_buf_size + videoState->audio_write_buf_size) /
                                                    videoState->audio_tgt.bytes_per_sec,
-                  videoState->audio_clock_serial, audio_callback_time / 1000000.0);
+                  videoState->audio_clock_serial, gAudioCallbackTime / 1000000.0);
 
     sync_clock_to_slave (&videoState->extclk, &videoState->audclk);
     }
@@ -1163,88 +1164,93 @@ static void sdl_audio_callback (void* opaque, Uint8* stream, int len) {
 //}}}
 
 //{{{
-static int audioOpen (void* opaque, AVChannelLayout* wanted_channel_layout, int wanted_sample_rate,
+static int audioOpen (void* opaque, AVChannelLayout* wantedChannelLayout, int wantedSampleRate,
                       struct sAudioParams* audio_hw_params) {
 
-  SDL_AudioSpec wanted_spec, spec;
+  SDL_AudioSpec audioSpec;
+  SDL_AudioSpec wantedAudioSpec, audioSpec;
 
   static const int next_nb_channels[] = {0, 0, 1, 6, 2, 6, 4, 6};
   static const int next_sample_rates[] = {0, 44100, 48000, 96000, 192000};
   int next_sample_rate_idx = FF_ARRAY_ELEMS(next_sample_rates) - 1;
-  int wanted_nb_channels = wanted_channel_layout->nb_channels;
 
+  int wantedNumChannels = wantedChannelLayout->nb_channels;
   const char* env = SDL_getenv ("SDL_AUDIO_CHANNELS");
   if (env) {
-    wanted_nb_channels = atoi (env);
-    av_channel_layout_uninit (wanted_channel_layout);
-    av_channel_layout_default (wanted_channel_layout, wanted_nb_channels);
+    wantedNumChannels = atoi (env);
+    av_channel_layout_uninit (wantedChannelLayout);
+    av_channel_layout_default (wantedChannelLayout, wantedNumChannels);
     }
 
-  if (wanted_channel_layout->order != AV_CHANNEL_ORDER_NATIVE) {
-    av_channel_layout_uninit (wanted_channel_layout);
-    av_channel_layout_default (wanted_channel_layout, wanted_nb_channels);
+  if (wantedChannelLayout->order != AV_CHANNEL_ORDER_NATIVE) {
+    av_channel_layout_uninit (wantedChannelLayout);
+    av_channel_layout_default (wantedChannelLayout, wantedNumChannels);
     }
 
-  wanted_nb_channels = wanted_channel_layout->nb_channels;
-  wanted_spec.channels = (uint8_t)(wanted_nb_channels);
-  wanted_spec.freq = wanted_sample_rate;
-  if (wanted_spec.freq <= 0 || wanted_spec.channels <= 0) {
+  wantedNumChannels = wantedChannelLayout->nb_channels;
+  wantedAudioSpec.channels = (uint8_t)(wantedNumChannels);
+  wantedAudioSpec.freq = wantedSampleRate;
+  if (wantedAudioSpec.freq <= 0 || wantedAudioSpec.channels <= 0) {
     //{{{  error return
     av_log (NULL, AV_LOG_ERROR, "Invalid sample rate or channel count!\n");
     return -1;
     }
     //}}}
 
-  while (next_sample_rate_idx && next_sample_rates[next_sample_rate_idx] >= wanted_spec.freq)
+  while (next_sample_rate_idx && next_sample_rates[next_sample_rate_idx] >= wantedAudioSpec.freq)
     next_sample_rate_idx--;
 
-  wanted_spec.format = AUDIO_S16SYS;
-  wanted_spec.silence = 0;
-  wanted_spec.samples = FFMAX(SDL_AUDIO_MIN_BUFFER_SIZE, 2 << av_log2(wanted_spec.freq / SDL_AUDIO_MAX_CALLBACKS_PER_SEC));
-  wanted_spec.callback = sdl_audio_callback;
-  wanted_spec.userdata = opaque;
-  while (!(audio_dev = SDL_OpenAudioDevice (NULL, 0, &wanted_spec, &spec, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE | SDL_AUDIO_ALLOW_CHANNELS_CHANGE))) {
+  wantedAudioSpec.format = AUDIO_S16SYS;
+  wantedAudioSpec.silence = 0;
+  wantedAudioSpec.samples = FFMAX(SDL_AUDIO_MIN_BUFFER_SIZE, 2 << av_log2(wantedAudioSpec.freq / SDL_AUDIO_MAX_CALLBACKS_PER_SEC));
+  wantedAudioSpec.callback = sdlAudioCallback;
+  wantedAudioSpec.userdata = opaque;
+
+  while (!(gAudioDevice = SDL_OpenAudioDevice (NULL, 0, &wantedAudioSpec, &audioSpec,
+                                               SDL_AUDIO_ALLOW_FREQUENCY_CHANGE | SDL_AUDIO_ALLOW_CHANNELS_CHANGE))) {
     av_log (NULL, AV_LOG_WARNING, "SDL_OpenAudio (%d channels, %d Hz): %s\n",
-                                  wanted_spec.channels, wanted_spec.freq, SDL_GetError());
-    wanted_spec.channels = (uint8_t)next_nb_channels[FFMIN(7, wanted_spec.channels)];
-    if (!wanted_spec.channels) {
-      wanted_spec.freq = (uint8_t)next_sample_rates[next_sample_rate_idx--];
-      wanted_spec.channels = (uint8_t)wanted_nb_channels;
-      if (!wanted_spec.freq) {
+                                  wantedAudioSpec.channels, wantedAudioSpec.freq, SDL_GetError());
+    wantedAudioSpec.channels = (uint8_t)next_nb_channels[FFMIN(7, wantedAudioSpec.channels)];
+    if (!wantedAudioSpec.channels) {
+      wantedAudioSpec.freq = (uint8_t)next_sample_rates[next_sample_rate_idx--];
+      wantedAudioSpec.channels = (uint8_t)wantedNumChannels;
+      if (!wantedAudioSpec.freq) {
         //{{{  error return
         av_log (NULL, AV_LOG_ERROR, "No more combinations to try, audio open failed\n");
         return -1;
         }
         //}}}
       }
-    av_channel_layout_default (wanted_channel_layout, wanted_spec.channels);
+    av_channel_layout_default (wantedChannelLayout, wantedAudioSpec.channels);
     }
 
-  if (spec.format != AUDIO_S16SYS) {
+  if (audioSpec.format != AUDIO_S16SYS) {
     //{{{  error return
-    av_log (NULL, AV_LOG_ERROR, "SDL advised audio format %d is not supported!\n", spec.format);
+    av_log (NULL, AV_LOG_ERROR, "SDL advised audio format %d is not supported!\n", audioSpec.format);
     return -1;
     }
     //}}}
 
-  if (spec.channels != wanted_spec.channels) {
-    av_channel_layout_uninit (wanted_channel_layout);
-    av_channel_layout_default (wanted_channel_layout, spec.channels);
-    if (wanted_channel_layout->order != AV_CHANNEL_ORDER_NATIVE) {
+  if (audioSpec.channels != wantedAudioSpec.channels) {
+    av_channel_layout_uninit (wantedChannelLayout);
+    av_channel_layout_default (wantedChannelLayout, audioSpec.channels);
+    if (wantedChannelLayout->order != AV_CHANNEL_ORDER_NATIVE) {
       //{{{  error return
-      av_log (NULL, AV_LOG_ERROR, "SDL advised channel count %d is not supported!\n", spec.channels);
+      av_log (NULL, AV_LOG_ERROR, "SDL advised channel count %d is not supported!\n", audioSpec.channels);
       return -1;
       }
       //}}}
     }
 
   audio_hw_params->fmt = AV_SAMPLE_FMT_S16;
-  audio_hw_params->freq = spec.freq;
-  if (av_channel_layout_copy (&audio_hw_params->ch_layout, wanted_channel_layout) < 0)
+  audio_hw_params->freq = audioSpec.freq;
+  if (av_channel_layout_copy (&audio_hw_params->ch_layout, wantedChannelLayout) < 0)
     return -1;
 
-  audio_hw_params->frame_size = av_samples_get_buffer_size (NULL, audio_hw_params->ch_layout.nb_channels, 1, audio_hw_params->fmt, 1);
-  audio_hw_params->bytes_per_sec = av_samples_get_buffer_size (NULL, audio_hw_params->ch_layout.nb_channels, audio_hw_params->freq, audio_hw_params->fmt, 1);
+  audio_hw_params->frame_size = av_samples_get_buffer_size (NULL, audio_hw_params->ch_layout.nb_channels, 1, 
+                                                            audio_hw_params->fmt, 1);
+  audio_hw_params->bytes_per_sec = av_samples_get_buffer_size (NULL, audio_hw_params->ch_layout.nb_channels, 
+                                                               audio_hw_params->freq, audio_hw_params->fmt, 1);
   if (audio_hw_params->bytes_per_sec <= 0 || audio_hw_params->frame_size <= 0) {
     //{{{  error return
     av_log (NULL, AV_LOG_ERROR, "av_samples_get_buffer_size failed\n");
@@ -1252,7 +1258,7 @@ static int audioOpen (void* opaque, AVChannelLayout* wanted_channel_layout, int 
     }
     //}}}
 
-  return spec.size;
+  return audioSpec.size;
   }
 //}}}
 //}}}
@@ -1339,7 +1345,7 @@ static int reallocTexture (SDL_Texture** texture, Uint32 new_format,
     if (*texture)
       SDL_DestroyTexture (*texture);
 
-    if (!(*texture = SDL_CreateTexture (renderer, new_format, SDL_TEXTUREACCESS_STREAMING, new_width, new_height)))
+    if (!(*texture = SDL_CreateTexture (gRenderer, new_format, SDL_TEXTUREACCESS_STREAMING, new_width, new_height)))
       return -1;
 
     if (SDL_SetTextureBlendMode (*texture, blendmode) < 0)
@@ -1420,13 +1426,13 @@ static int videoOpen (sVideoState* videoState) {
 
   if (!gWindowTitle)
     gWindowTitle = gFilename;
-  SDL_SetWindowTitle (window, gWindowTitle);
+  SDL_SetWindowTitle (gWindow, gWindowTitle);
 
-  SDL_SetWindowSize (window, width, height);
-  SDL_SetWindowPosition (window, screen_left, screen_top);
-  if (gIsFullScreen)
-    SDL_SetWindowFullscreen (window, SDL_WINDOW_FULLSCREEN_DESKTOP);
-  SDL_ShowWindow (window);
+  SDL_SetWindowSize (gWindow, width, height);
+  SDL_SetWindowPosition (gWindow, screen_left, screen_top);
+  if (gFullScreen)
+    SDL_SetWindowFullscreen (gWindow, SDL_WINDOW_FULLSCREEN_DESKTOP);
+  SDL_ShowWindow (gWindow);
 
   videoState->width  = width;
   videoState->height = height;
@@ -1445,7 +1451,7 @@ static void drawRectangle (int x, int y, int width, int height) {
   rect.h = height;
 
   if (width && height)
-    SDL_RenderFillRect (renderer, &rect);
+    SDL_RenderFillRect (gRenderer, &rect);
   }
 //}}}
 //{{{
@@ -1469,8 +1475,8 @@ static void drawVideoAudioDisplay (sVideoState* videoState) {
 
     /* to be more precise, we take into account the time spent since the last buffer computation */
     int64_t time_diff = 0;
-    if (audio_callback_time) {
-      time_diff = av_gettime_relative() - audio_callback_time;
+    if (gAudioCallbackTime) {
+      time_diff = av_gettime_relative() - gAudioCallbackTime;
       delay -= (int)(time_diff * videoState->audio_tgt.freq / 1000000);
       }
 
@@ -1504,7 +1510,7 @@ static void drawVideoAudioDisplay (sVideoState* videoState) {
 
   if (videoState->show_mode == SHOW_MODE_WAVES) {
     //{{{  draw waves
-    SDL_SetRenderDrawColor (renderer, 255, 255, 255, 255);
+    SDL_SetRenderDrawColor (gRenderer, 255, 255, 255, 255);
 
     // total height for one channel
     h = videoState->height / nb_display_channels;
@@ -1532,7 +1538,7 @@ static void drawVideoAudioDisplay (sVideoState* videoState) {
        }
 
      // draw
-     SDL_SetRenderDrawColor (renderer, 0, 0, 255, 255);
+     SDL_SetRenderDrawColor (gRenderer, 0, 0, 255, 255);
      for (ch = 1; ch < nb_display_channels; ch++) {
        y = videoState->ytop + ch * h;
        drawRectangle (videoState->xleft, y, videoState->width, 1);
@@ -1603,7 +1609,7 @@ static void drawVideoAudioDisplay (sVideoState* videoState) {
         SDL_UnlockTexture (videoState->visTexture);
         }
       //}}}
-      SDL_RenderCopy (renderer, videoState->visTexture, NULL, NULL);
+      SDL_RenderCopy (gRenderer, videoState->visTexture, NULL, NULL);
       }
 
     if (!videoState->paused)
@@ -1680,11 +1686,11 @@ static void drawVideoDisplay (sVideoState* videoState) {
     vp->flip_v = vp->frame->linesize[0] < 0;
     }
 
-  SDL_RenderCopyEx (renderer, videoState->vidTexture, NULL, &rect, 0, NULL, vp->flip_v ? SDL_FLIP_VERTICAL : (SDL_RendererFlip)0);
+  SDL_RenderCopyEx (gRenderer, videoState->vidTexture, NULL, &rect, 0, NULL, vp->flip_v ? SDL_FLIP_VERTICAL : (SDL_RendererFlip)0);
   setSdlYuvConversionMode (NULL);
 
   if (sp)
-    SDL_RenderCopy (renderer, videoState->subTexture, NULL, &rect);
+    SDL_RenderCopy (gRenderer, videoState->subTexture, NULL, &rect);
   }
 //}}}
 //{{{
@@ -1694,15 +1700,15 @@ static void videoDisplay (sVideoState* videoState) {
   if (!videoState->width)
     videoOpen (videoState);
 
-  SDL_SetRenderDrawColor (renderer, 0, 0, 0, 255);
-  SDL_RenderClear (renderer);
+  SDL_SetRenderDrawColor (gRenderer, 0, 0, 0, 255);
+  SDL_RenderClear (gRenderer);
 
   if (videoState->audioStream && (videoState->show_mode != SHOW_MODE_VIDEO))
     drawVideoAudioDisplay (videoState);
   else if (videoState->videoStream)
     drawVideoDisplay (videoState);
 
-  SDL_RenderPresent (renderer);
+  SDL_RenderPresent (gRenderer);
   }
 //}}}
 
@@ -2030,7 +2036,7 @@ static void streamComponentClose (sVideoState* videoState, int stream_index) {
     case AVMEDIA_TYPE_AUDIO:
       decoderAbort (&videoState->auddec, &videoState->sampq);
 
-      SDL_CloseAudioDevice (audio_dev);
+      SDL_CloseAudioDevice (gAudioDevice);
       decoderDestroy (&videoState->auddec);
       swr_free (&videoState->swrContext);
       av_freep (&videoState->audio_buf1);
@@ -2139,11 +2145,11 @@ static void do_exit (sVideoState* videoState) {
   if (videoState)
     streamClose (videoState);
 
-  if (renderer)
-    SDL_DestroyRenderer (renderer);
+  if (gRenderer)
+    SDL_DestroyRenderer (gRenderer);
 
-  if (window)
-    SDL_DestroyWindow (window);
+  if (gWindow)
+    SDL_DestroyWindow (gWindow);
 
   uninit_opts();
   av_freep (&vfilters_list);
@@ -2336,9 +2342,9 @@ static int configureVideoFilters (AVFilterGraph* graph, sVideoState* videoState,
   AVRational fr = av_guess_frame_rate (videoState->ic, videoState->videoStream, NULL);
 
   int nb_pix_fmts = 0;
-  for (int i = 0; i < (int)renderer_info.num_texture_formats; i++) {
+  for (int i = 0; i < (int)gRendererInfo.num_texture_formats; i++) {
     for (int j = 0; j < FF_ARRAY_ELEMS(sdlTextureFormatMap) - 1; j++) {
-      if (renderer_info.texture_formats[i] == (uint32_t)sdlTextureFormatMap[j].texture_fmt) {
+      if (gRendererInfo.texture_formats[i] == (uint32_t)sdlTextureFormatMap[j].texture_fmt) {
         pix_fmts[nb_pix_fmts++] = sdlTextureFormatMap[j].format;
         break;
         }
@@ -2911,8 +2917,8 @@ static void updateVolume (sVideoState* videoState, int sign, double step) {
 //{{{
 static void toggleFullScreen (sVideoState* videoState) {
 
-  gIsFullScreen = !gIsFullScreen;
-  SDL_SetWindowFullscreen (window, gIsFullScreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+  gFullScreen = !gFullScreen;
+  SDL_SetWindowFullscreen (gWindow, gFullScreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
   }
 //}}}
 //{{{
@@ -3079,7 +3085,7 @@ static int streamComponentOpen (sVideoState* videoState, int stream_index) {
       if ((ret = decoderStart (&videoState->auddec, audioThread, "audio_decoder", videoState)) < 0)
         goto out;
 
-      SDL_PauseAudioDevice (audio_dev, 0);
+      SDL_PauseAudioDevice (gAudioDevice, 0);
       break;
     //}}}
     //{{{
@@ -3585,7 +3591,7 @@ fail:
   }
 //}}}
 //{{{
-static sVideoState* streamOpen (const char* filename, const AVInputFormat* iformat) {
+static sVideoState* streamOpen (const char* filename, const AVInputFormat* inputFileFormat) {
 
   sVideoState* videoState = (sVideoState*) av_mallocz (sizeof(sVideoState));
   if (!videoState)
@@ -3597,7 +3603,7 @@ static sVideoState* streamOpen (const char* filename, const AVInputFormat* iform
   videoState->filename = av_strdup (filename);
   if (!videoState->filename)
     goto fail;
-  videoState->iformat = iformat;
+  videoState->iformat = inputFileFormat;
   videoState->ytop = 0;
   videoState->xleft = 0;
 
@@ -3923,8 +3929,8 @@ static int opt_height (void* optctx, const char* opt, const char* arg) {
 //{{{
 static int opt_format (void* optctx, const char* opt, const char* arg) {
 
-  gFileIformat = av_find_input_format (arg);
-  if (!gFileIformat) {
+  gInputFileFormat = av_find_input_format (arg);
+  if (!gInputFileFormat) {
     av_log (NULL, AV_LOG_FATAL, "Unknown input format: %s\n", arg);
     return AVERROR(EINVAL);
     }
@@ -4017,7 +4023,7 @@ static const OptionDef options[] = {
   CMDUTILS_COMMON_OPTIONS
   { "x", HAS_ARG, { .func_arg = opt_width }, "force displayed width", "width" },
   { "y", HAS_ARG, { .func_arg = opt_height }, "force displayed height", "height" },
-  { "fs", OPT_BOOL, { &gIsFullScreen }, "force full screen" },
+  { "fs", OPT_BOOL, { &gFullScreen }, "force full screen" },
 
   { "an", OPT_BOOL, { &gAudioDisable }, "disable audio" },
   { "vn", OPT_BOOL, { &gVideoDisable }, "disable video" },
@@ -4032,38 +4038,38 @@ static const OptionDef options[] = {
 
   { "bytes", OPT_INT | HAS_ARG, { &seek_by_bytes }, "seek by bytes 0=off 1=on -1=auto", "val" },
   { "seek_interval", OPT_FLOAT | HAS_ARG, { &seek_interval }, "set seek interval for left/right keys, in seconds", "seconds" },
-  
+
   { "nodisp", OPT_BOOL, { &gDisplayDisable }, "disable graphical display" },
   { "noborder", OPT_BOOL, { &borderless }, "borderless window" },
   { "alwaysontop", OPT_BOOL, { &alwaysontop }, "window always on top" },
-  
+
   { "volume", OPT_INT | HAS_ARG, { &startup_volume}, "set startup volume 0=min 100=max", "volume" },
   { "f", HAS_ARG, { .func_arg = opt_format }, "force format", "fmt" },
-  
+
   { "stats", OPT_BOOL | OPT_EXPERT, { &show_status }, "show status", "" },
-  
+
   { "fast", OPT_BOOL | OPT_EXPERT, { &fast }, "non spec compliant optimizations", "" },
   { "genpts", OPT_BOOL | OPT_EXPERT, { &genpts }, "generate pts", "" },
   { "drp", OPT_INT | HAS_ARG | OPT_EXPERT, { &decoder_reorder_pts }, "let decoder reorder pts 0=off 1=on -1=auto", ""},
   { "lowres", OPT_INT | HAS_ARG | OPT_EXPERT, { &lowres }, "", "" },
   { "sync", HAS_ARG | OPT_EXPERT, { .func_arg = opt_sync }, "set audio-video sync. type (type=audio/video/ext)", "type" },
-  
+
   { "autoexit", OPT_BOOL | OPT_EXPERT, { &autoexit }, "exit at the end", "" },
   { "exitonkeydown", OPT_BOOL | OPT_EXPERT, { &gExitOnKeydown }, "exit on key down", "" },
   { "exitonmousedown", OPT_BOOL | OPT_EXPERT, { &exit_on_mousedown }, "exit on mouse down", "" },
-  
+
   { "loop", OPT_INT | HAS_ARG | OPT_EXPERT, { &loop }, "set number of times the playback shall be looped", "loop count" },
   { "framedrop", OPT_BOOL | OPT_EXPERT, { &framedrop }, "drop frames when cpu is too slow", "" },
-  
+
   { "infbuf", OPT_BOOL | OPT_EXPERT, { &infinite_buffer }, "don't limit the input buffer size (useful with realtime streams)", "" },
   { "gWindowTitle", OPT_STRING | HAS_ARG, { &gWindowTitle }, "set window title", "window title" },
 
   { "left", OPT_INT | HAS_ARG | OPT_EXPERT, { &screen_left }, "set the x position for the left of the window", "x pos" },
   { "top", OPT_INT | HAS_ARG | OPT_EXPERT, { &screen_top }, "set the y position for the top of the window", "y pos" },
-  
+
   { "vf", OPT_EXPERT | HAS_ARG, { .func_arg = opt_add_vfilter }, "set video filters", "filter_graph" },
   { "af", OPT_STRING | HAS_ARG, { &afilters }, "set audio filters", "filter_graph" },
-  
+
   { "rdftspeed", OPT_INT | HAS_ARG| OPT_AUDIO | OPT_EXPERT, { &rdftspeed }, "rdft speed", "msecs" },
   { "showmode", HAS_ARG, { .func_arg = opt_show_mode}, "select show mode (0 = video, 1 = waves, 2 = RDFT)", "mode" },
   { "i", OPT_BOOL, { &dummy}, "read specified file", "input_file"},
@@ -4190,7 +4196,7 @@ int main (int argc, char** argv) {
   SDL_EventState (SDL_USEREVENT, SDL_IGNORE);
 
   if (!gDisplayDisable) {
-    //{{{  show window
+    //{{{  create window
     flags = SDL_WINDOW_HIDDEN;
 
     if (alwaysontop)
@@ -4204,35 +4210,40 @@ int main (int argc, char** argv) {
         SDL_SetHint (SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
       #endif
 
-    window = SDL_CreateWindow (program_name, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                               default_width, default_height, flags);
+    gWindow = SDL_CreateWindow (program_name, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+                                default_width, default_height, flags);
     SDL_SetHint (SDL_HINT_RENDER_SCALE_QUALITY, "linear");
-    if (window) {
-      renderer = SDL_CreateRenderer (window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-
-      if (!renderer) {
+    if (gWindow) {
+      gRenderer = SDL_CreateRenderer (gWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+      if (!gRenderer) {
+        //{{{  error return
         av_log (NULL, AV_LOG_WARNING, "Failed to initialize a hardware accelerated renderer: %s\n", SDL_GetError());
-        renderer = SDL_CreateRenderer (window, -1, 0);
+        gRenderer = SDL_CreateRenderer (gWindow, -1, 0);
         }
+        //}}}
 
-      if (renderer) {
-        if (!SDL_GetRendererInfo (renderer, &renderer_info))
-          av_log (NULL, AV_LOG_VERBOSE, "Initialized %s renderer.\n", renderer_info.name);
+      if (gRenderer) {
+        if (!SDL_GetRendererInfo (gRenderer, &gRendererInfo))
+          av_log (NULL, AV_LOG_VERBOSE, "Initialized %s renderer\n", gRendererInfo.name);
         }
       }
 
-    if (!window || !renderer || !renderer_info.num_texture_formats) {
+    if (!gWindow || !gRenderer || !gRendererInfo.num_texture_formats) {
+      //{{{  error return
       av_log (NULL, AV_LOG_FATAL, "Failed to create window or renderer: %s", SDL_GetError());
       do_exit (NULL);
       }
+      //}}}
     }
     //}}}
 
-  sVideoState* videoState = streamOpen (gFilename, gFileIformat);
+  sVideoState* videoState = streamOpen (gFilename, gInputFileFormat);
   if (!videoState) {
+    //{{{  error return
     av_log (NULL, AV_LOG_FATAL, "Failed to initialize sVideoState!\n");
     do_exit (NULL);
     }
+    //}}}
 
   eventLoop (videoState);
   }
