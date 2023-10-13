@@ -139,6 +139,177 @@ public:
 //{{{
 class sPacketQueue {
 public:
+  //{{{
+  int packet_queue_put_private (AVPacket* newPkt) {
+
+
+    if (abort_request)
+      return -1;
+
+    sPacketList pkt1;
+    pkt1.pkt = newPkt;
+    pkt1.serial = serial;
+
+    int ret = av_fifo_write (pkt_list, &pkt1, 1);
+    if (ret < 0)
+      return ret;
+
+    nb_packets++;
+    size += pkt1.pkt->size + sizeof(pkt1);
+    duration += pkt1.pkt->duration;
+
+    /* XXX: should duplicate packet data in DV case */
+    SDL_CondSignal (cond);
+    return 0;
+    }
+  //}}}
+  //{{{
+  int packet_queue_put (AVPacket* newPkt) {
+
+    AVPacket* pkt1 = av_packet_alloc();
+    if (!pkt1) {
+      av_packet_unref (newPkt);
+      return -1;
+      }
+    av_packet_move_ref (pkt1, newPkt);
+
+    SDL_LockMutex (mutex);
+    int ret = packet_queue_put_private (pkt1);
+    SDL_UnlockMutex (mutex);
+
+    if (ret < 0)
+      av_packet_free (&pkt1);
+
+    return ret;
+    }
+  //}}}
+  //{{{
+  int packet_queue_put_nullpacket (AVPacket* newPkt, int stream_index) {
+
+    pkt->stream_index = stream_index;
+    return packet_queue_put (newPkt);
+    }
+  //}}}
+
+  //{{{
+  /* packet queue handling */
+  int packet_queue_ini () {
+
+    memset (this, 0, sizeof(sPacketQueue));
+
+    pkt_list = av_fifo_alloc2 (1, sizeof(sPacketList), AV_FIFO_FLAG_AUTO_GROW);
+    if (!pkt_list)
+      return AVERROR(ENOMEM);
+
+    mutex = SDL_CreateMutex();
+    if (!mutex) {
+      av_log (NULL, AV_LOG_FATAL, "SDL_CreateMutex(): %s\n", SDL_GetError());
+      return AVERROR(ENOMEM);
+      }
+
+    cond = SDL_CreateCond();
+    if (!cond) {
+      av_log (NULL, AV_LOG_FATAL, "SDL_CreateCond(): %s\n", SDL_GetError());
+      return AVERROR(ENOMEM);
+      }
+
+    abort_request = 1;
+
+    return 0;
+    }
+  //}}}
+  //{{{
+  void packet_queue_flush () {
+
+    sPacketList pkt1;
+
+    SDL_LockMutex (mutex);
+    while (av_fifo_read (pkt_list, &pkt1, 1) >= 0)
+      av_packet_free (&pkt1.pkt);
+
+    nb_packets = 0;
+    size = 0;
+    duration = 0;
+    serial++;
+
+    SDL_UnlockMutex (mutex);
+    }
+  //}}}
+  //{{{
+  void packet_queue_destroy () {
+
+    packet_queue_flush();
+    av_fifo_freep2 (&pkt_list);
+
+    SDL_DestroyMutex (mutex);
+    SDL_DestroyCond (cond);
+    }
+  //}}}
+  //{{{
+  void packet_queue_abort() {
+
+    SDL_LockMutex (mutex);
+
+    abort_request = 1;
+    SDL_CondSignal (cond);
+
+    SDL_UnlockMutex (mutex);
+    }
+  //}}}
+
+  //{{{
+  void packet_queue_start() {
+
+    SDL_LockMutex (mutex);
+
+    abort_request = 0;
+    serial++;
+
+    SDL_UnlockMutex (mutex);
+    }
+  //}}}
+
+  //{{{
+
+  /* return < 0 if aborted, 0 if no packet and > 0 if packet.  */
+  int packet_queue_get (AVPacket* newPpkt, int block, int* serialId) {
+
+    int ret = 0;
+
+    SDL_LockMutex (mutex);
+
+    for (;;) {
+      if (abort_request) {
+        ret = -1;
+        break;
+        }
+
+      sPacketList pkt1;
+      if (av_fifo_read (pkt_list, &pkt1, 1) >= 0) {
+        nb_packets--;
+        size -= pkt1.pkt->size + sizeof(pkt1);
+        duration -= pkt1.pkt->duration;
+        av_packet_move_ref (pkt, pkt1.pkt);
+        if (serial)
+           *serialId = pkt1.serial;
+        av_packet_free (&pkt1.pkt);
+        ret = 1;
+        break;
+        }
+      else if (!block) {
+        ret = 0;
+        break;
+        }
+      else 
+        SDL_CondWait (cond, mutex);
+       }
+
+    SDL_UnlockMutex (mutex);
+
+    return ret;
+    }
+  //}}}
+
   AVPacket* pkt;
   AVFifo* pkt_list;
 
@@ -3262,16 +3433,17 @@ int readThread (void* arg) {
 // this thread gets the stream from the disk or the network
 
   int i, ret;
+  int err = 0;
   int st_index[AVMEDIA_TYPE_NB];
   int64_t stream_start_time;
-  int packetInPlayRange = 0;
-  int scan_all_pmts_set = 0;
+
+  bool packetInPlayRange = false;
+  int scanAllPmtsSet = false;
   int64_t pkt_ts;
 
   sVideoState* videoState = (sVideoState*)arg;
   AVFormatContext* formatContext = avformat_alloc_context();
   AVPacket* pkt = av_packet_alloc();
-  int err = 0;
 
   SDL_mutex* wait_mutex = SDL_CreateMutex();
   if (!wait_mutex) {
@@ -3305,7 +3477,7 @@ int readThread (void* arg) {
   formatContext->interrupt_callback.opaque = videoState;
   if (!av_dict_get (format_opts, "scan_all_pmts", NULL, AV_DICT_MATCH_CASE)) {
     av_dict_set (&format_opts, "scan_all_pmts", "1", AV_DICT_DONT_OVERWRITE);
-    scan_all_pmts_set = 1;
+    scanAllPmtsSet = true;
     }
 
   err = avformat_open_input (&formatContext, videoState->filename, videoState->iformat, &format_opts);
@@ -3317,7 +3489,7 @@ int readThread (void* arg) {
     }
     //}}}
 
-  if (scan_all_pmts_set)
+  if (scanAllPmtsSet)
     av_dict_set (&format_opts, "scan_all_pmts", NULL, AV_DICT_MATCH_CASE);
 
   const AVDictionaryEntry* entry;
