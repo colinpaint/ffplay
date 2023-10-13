@@ -1257,6 +1257,19 @@ void set_default_window_size (int width, int height, AVRational sar) {
   }
 //}}}
 
+//  audio
+//{{{
+int compareAudioFormats (enum AVSampleFormat fmt1, int64_t channel_count1,
+                                enum AVSampleFormat fmt2, int64_t channel_count2) {
+// If channel count == 1, planar and non-planar formats are the same
+
+  if (channel_count1 == 1 && channel_count2 == 1)
+    return av_get_packed_sample_fmt (fmt1) != av_get_packed_sample_fmt(fmt2);
+  else
+    return channel_count1 != channel_count2 || fmt1 != fmt2;
+  }
+//}}}
+
 //{{{
 class sVideoState {
 public:
@@ -1513,9 +1526,6 @@ public:
     }
   //}}}
 
-
-
-
   //{{{
   void streamComponentClose (int stream_index) {
 
@@ -1592,7 +1602,6 @@ public:
       }
     }
   //}}}
-
 
   SDL_Thread* read_tid;
   const AVInputFormat* iformat;
@@ -2253,19 +2262,71 @@ retry:
     //}}}
   }
 //}}}
-
-//  audio
 //{{{
-int compareAudioFormats (enum AVSampleFormat fmt1, int64_t channel_count1,
-                                enum AVSampleFormat fmt2, int64_t channel_count2) {
-// If channel count == 1, planar and non-planar formats are the same
+void streamClose (sVideoState* videoState) {
 
-  if (channel_count1 == 1 && channel_count2 == 1)
-    return av_get_packed_sample_fmt (fmt1) != av_get_packed_sample_fmt(fmt2);
-  else
-    return channel_count1 != channel_count2 || fmt1 != fmt2;
+  /* XXX: use a special url_shutdown call to abort parse cleanly */
+  videoState->abort_request = 1;
+  SDL_WaitThread (videoState->read_tid, NULL);
+
+  /* close each stream */
+  if (videoState->audioStreamId >= 0)
+    videoState->streamComponentClose (videoState->audioStreamId);
+  if (videoState->videoStreamId >= 0)
+    videoState->streamComponentClose (videoState->videoStreamId);
+  if (videoState->subtitleStreamId >= 0)
+    videoState->streamComponentClose (videoState->subtitleStreamId);
+
+  avformat_close_input (&videoState->formatContext);
+
+  packet_queue_destroy (&videoState->videoq);
+  packet_queue_destroy (&videoState->audioq);
+  packet_queue_destroy (&videoState->subtitleq);
+
+  /* free all pictures */
+  frame_queue_destroy (&videoState->pictq);
+  frame_queue_destroy (&videoState->sampq);
+  frame_queue_destroy (&videoState->subpq);
+
+  SDL_DestroyCond (videoState->continueReadThread);
+  sws_freeContext (videoState->sub_convert_ctx);
+
+  av_free (videoState->filename);
+
+  if (videoState->visTexture)
+    SDL_DestroyTexture (videoState->visTexture);
+  if (videoState->vidTexture)
+    SDL_DestroyTexture (videoState->vidTexture);
+  if (videoState->subTexture)
+    SDL_DestroyTexture (videoState->subTexture);
+  av_free (videoState);
   }
 //}}}
+//{{{
+void do_exit (sVideoState* videoState) {
+
+  if (videoState)
+    streamClose (videoState);
+
+  if (gRenderer)
+    SDL_DestroyRenderer (gRenderer);
+
+  if (gWindow)
+    SDL_DestroyWindow (gWindow);
+
+  uninit_opts();
+  av_freep (&vfilters_list);
+  avformat_network_deinit();
+
+  if (show_status)
+    printf ("\n");
+  SDL_Quit();
+
+  av_log (NULL, AV_LOG_QUIET, "%s", "");
+  exit (0);
+  }
+//}}}
+
 //{{{
 void sdlAudioCallback (void* opaque, Uint8* stream, int len) {
 /* prepare a new audio buffer */
@@ -2418,72 +2479,6 @@ int audioOpen (void* opaque, AVChannelLayout* wantedChannelLayout, int wantedSam
   }
 //}}}
 
-// exit
-//{{{
-void streamClose (sVideoState* videoState) {
-
-  /* XXX: use a special url_shutdown call to abort parse cleanly */
-  videoState->abort_request = 1;
-  SDL_WaitThread (videoState->read_tid, NULL);
-
-  /* close each stream */
-  if (videoState->audioStreamId >= 0)
-    videoState->streamComponentClose (videoState->audioStreamId);
-  if (videoState->videoStreamId >= 0)
-    videoState->streamComponentClose (videoState->videoStreamId);
-  if (videoState->subtitleStreamId >= 0)
-    videoState->streamComponentClose (videoState->subtitleStreamId);
-
-  avformat_close_input (&videoState->formatContext);
-
-  packet_queue_destroy (&videoState->videoq);
-  packet_queue_destroy (&videoState->audioq);
-  packet_queue_destroy (&videoState->subtitleq);
-
-  /* free all pictures */
-  frame_queue_destroy (&videoState->pictq);
-  frame_queue_destroy (&videoState->sampq);
-  frame_queue_destroy (&videoState->subpq);
-
-  SDL_DestroyCond (videoState->continueReadThread);
-  sws_freeContext (videoState->sub_convert_ctx);
-
-  av_free (videoState->filename);
-
-  if (videoState->visTexture)
-    SDL_DestroyTexture (videoState->visTexture);
-  if (videoState->vidTexture)
-    SDL_DestroyTexture (videoState->vidTexture);
-  if (videoState->subTexture)
-    SDL_DestroyTexture (videoState->subTexture);
-  av_free (videoState);
-  }
-//}}}
-//{{{
-void do_exit (sVideoState* videoState) {
-
-  if (videoState)
-    streamClose (videoState);
-
-  if (gRenderer)
-    SDL_DestroyRenderer (gRenderer);
-
-  if (gWindow)
-    SDL_DestroyWindow (gWindow);
-
-  uninit_opts();
-  av_freep (&vfilters_list);
-  avformat_network_deinit();
-
-  if (show_status)
-    printf ("\n");
-  SDL_Quit();
-
-  av_log (NULL, AV_LOG_QUIET, "%s", "");
-  exit (0);
-  }
-//}}}
-
 // thread
 //{{{
 int configureFilterGraph (AVFilterGraph* graph, const char* filtergraph,
@@ -2532,7 +2527,6 @@ fail:
   return ret;
   }
 //}}}
-
 //{{{
 int configureVideoFilters (AVFilterGraph* graph, sVideoState* videoState, const char* filters, AVFrame* frame) {
 
@@ -2807,7 +2801,6 @@ the_end:
   return 0;
   }
 //}}}
-
 //{{{
 int configureAudioFilters (sVideoState* videoState, const char* filters, int force_output_format) {
 
@@ -2971,7 +2964,6 @@ the_end:
   return ret;
   }
 //}}}
-
 //{{{
 int subtitleThread (void* arg) {
 
