@@ -651,6 +651,7 @@ public:
   int flip_v;
   };
 //}}}
+
 //{{{
 class sFrameQueue {
 public:
@@ -826,6 +827,7 @@ int64_t frame_queue_last_pos (sFrameQueue* frameQueue) {
   }
 //}}}
 //}}}
+
 //{{{
 class sDecoder {
 public:
@@ -848,6 +850,25 @@ public:
   SDL_Thread* decoder_tid;
   };
 //}}}
+//{{{
+void decoderAbort (sDecoder* decoder, sFrameQueue* frameQueue) {
+
+  packet_queue_abort (decoder->queue);
+  frame_queue_signal (frameQueue);
+  SDL_WaitThread (decoder->decoder_tid, NULL);
+
+  decoder->decoder_tid = NULL;
+  packet_queue_flush (decoder->queue);
+  }
+//}}}
+//{{{
+void decoderDestroy (sDecoder* d) {
+
+  av_packet_free (&d->pkt);
+  avcodec_free_context (&d->avctx);
+  }
+//}}}
+
 //{{{
 class sVideoState {
 public:
@@ -1104,6 +1125,87 @@ public:
     }
   //}}}
 
+
+
+
+  //{{{
+  void streamComponentClose (int stream_index) {
+
+    AVCodecParameters* codecParameters;
+
+    if (stream_index < 0 || stream_index >= (int)formatContext->nb_streams)
+      return;
+    codecParameters = formatContext->streams[stream_index]->codecpar;
+
+    switch (codecParameters->codec_type) {
+      //{{{
+      case AVMEDIA_TYPE_AUDIO:
+        decoderAbort (&auddec, &sampq);
+
+        SDL_CloseAudioDevice (gAudioDevice);
+        decoderDestroy (&auddec);
+        swr_free (&swrContext);
+        av_freep (&audio_buf1);
+
+        audio_buf1_size = 0;
+        audio_buf = NULL;
+        if (rdft) {
+          av_tx_uninit (&rdft);
+          av_freep (&real_data);
+          av_freep (&rdft_data);
+          rdft = NULL;
+          rdft_bits = 0;
+          }
+
+        break;
+      //}}}
+      //{{{
+      case AVMEDIA_TYPE_VIDEO:
+        decoderAbort (&viddec, &pictq);
+        decoderDestroy (&viddec);
+        break;
+      //}}}
+      //{{{
+      case AVMEDIA_TYPE_SUBTITLE:
+        decoderAbort (&subdec, &subpq);
+        decoderDestroy (&subdec);
+        break;
+      //}}}
+      //{{{
+      default:
+        break;
+      //}}}
+      }
+
+    formatContext->streams[stream_index]->discard = AVDISCARD_ALL;
+    switch (codecParameters->codec_type) {
+      //{{{
+      case AVMEDIA_TYPE_AUDIO:
+        audioStream = NULL;
+        audioStreamId = -1;
+        break;
+      //}}}
+      //{{{
+      case AVMEDIA_TYPE_VIDEO:
+        videoStream = NULL;
+        videoStreamId = -1;
+        break;
+      //}}}
+      //{{{
+      case AVMEDIA_TYPE_SUBTITLE:
+        subtitleStream = NULL;
+        subtitleStreamId = -1;
+        break;
+      //}}}
+      //{{{
+      default:
+        break;
+      //}}}
+      }
+    }
+  //}}}
+
+
   SDL_Thread* read_tid;
   const AVInputFormat* iformat;
   SDL_cond* continueReadThread;
@@ -1214,24 +1316,6 @@ public:
   };
 //}}}
 
-//{{{
-static void decoderAbort (sDecoder* decoder, sFrameQueue* frameQueue) {
-
-  packet_queue_abort (decoder->queue);
-  frame_queue_signal (frameQueue);
-  SDL_WaitThread (decoder->decoder_tid, NULL);
-
-  decoder->decoder_tid = NULL;
-  packet_queue_flush (decoder->queue);
-  }
-//}}}
-//{{{
-static void decoderDestroy (sDecoder* d) {
-
-  av_packet_free (&d->pkt);
-  avcodec_free_context (&d->avctx);
-  }
-//}}}
 //{{{  options vars
 static const AVInputFormat* gInputFileFormat;
 static const char* gFilename;
@@ -1464,8 +1548,8 @@ int videoOpen (sVideoState* videoState) {
     SDL_SetWindowFullscreen (gWindow, SDL_WINDOW_FULLSCREEN_DESKTOP);
   SDL_ShowWindow (gWindow);
 
-  videoState->width  = width;
-  videoState->height = height;
+  width  = width;
+  height = height;
 
   return 0;
   }
@@ -2031,7 +2115,6 @@ int queuePicture (sVideoState* videoState, AVFrame* src_frame, double pts, doubl
   }
 //}}}
 //}}}
-
 //{{{  audio
 //{{{
 int compareAudioFormats (enum AVSampleFormat fmt1, int64_t channel_count1,
@@ -2198,83 +2281,6 @@ int audioOpen (void* opaque, AVChannelLayout* wantedChannelLayout, int wantedSam
 //}}}
 //{{{  exit
   //{{{
-  void streamComponentClose (sVideoState* videoState, int stream_index) {
-
-    AVFormatContext* formatContext = videoState->formatContext;
-    AVCodecParameters* codecParameters;
-
-    if (stream_index < 0 || stream_index >= (int)formatContext->nb_streams)
-      return;
-    codecParameters = formatContext->streams[stream_index]->codecpar;
-
-    switch (codecParameters->codec_type) {
-      //{{{
-      case AVMEDIA_TYPE_AUDIO:
-        decoderAbort (&videoState->auddec, &videoState->sampq);
-
-        SDL_CloseAudioDevice (gAudioDevice);
-        decoderDestroy (&videoState->auddec);
-        swr_free (&videoState->swrContext);
-        av_freep (&videoState->audio_buf1);
-
-        videoState->audio_buf1_size = 0;
-        videoState->audio_buf = NULL;
-        if (videoState->rdft) {
-          av_tx_uninit (&videoState->rdft);
-          av_freep (&videoState->real_data);
-          av_freep (&videoState->rdft_data);
-          videoState->rdft = NULL;
-          videoState->rdft_bits = 0;
-          }
-
-        break;
-      //}}}
-      //{{{
-      case AVMEDIA_TYPE_VIDEO:
-        decoderAbort (&videoState->viddec, &videoState->pictq);
-        decoderDestroy (&videoState->viddec);
-        break;
-      //}}}
-      //{{{
-      case AVMEDIA_TYPE_SUBTITLE:
-        decoderAbort (&videoState->subdec, &videoState->subpq);
-        decoderDestroy (&videoState->subdec);
-        break;
-      //}}}
-      //{{{
-      default:
-        break;
-      //}}}
-      }
-
-    formatContext->streams[stream_index]->discard = AVDISCARD_ALL;
-    switch (codecParameters->codec_type) {
-      //{{{
-      case AVMEDIA_TYPE_AUDIO:
-        videoState->audioStream = NULL;
-        videoState->audioStreamId = -1;
-        break;
-      //}}}
-      //{{{
-      case AVMEDIA_TYPE_VIDEO:
-        videoState->videoStream = NULL;
-        videoState->videoStreamId = -1;
-        break;
-      //}}}
-      //{{{
-      case AVMEDIA_TYPE_SUBTITLE:
-        videoState->subtitleStream = NULL;
-        videoState->subtitleStreamId = -1;
-        break;
-      //}}}
-      //{{{
-      default:
-        break;
-      //}}}
-      }
-    }
-  //}}}
-  //{{{
   void streamClose (sVideoState* videoState) {
 
     /* XXX: use a special url_shutdown call to abort parse cleanly */
@@ -2283,11 +2289,11 @@ int audioOpen (void* opaque, AVChannelLayout* wantedChannelLayout, int wantedSam
 
     /* close each stream */
     if (videoState->audioStreamId >= 0)
-      streamComponentClose (videoState, videoState->audioStreamId);
+      videoState->streamComponentClose (videoState->audioStreamId);
     if (videoState->videoStreamId >= 0)
-      streamComponentClose (videoState, videoState->videoStreamId);
+      videoState->streamComponentClose (videoState->videoStreamId);
     if (videoState->subtitleStreamId >= 0)
-      streamComponentClose (videoState, videoState->subtitleStreamId);
+      videoState->streamComponentClose (videoState->subtitleStreamId);
 
     avformat_close_input (&videoState->formatContext);
 
@@ -2338,9 +2344,6 @@ int audioOpen (void* opaque, AVChannelLayout* wantedChannelLayout, int wantedSam
     exit (0);
     }
   //}}}
-
-
-
 //}}}
 
 // thread
@@ -3402,7 +3405,7 @@ the_end:
   av_log (NULL, AV_LOG_INFO, "Switch %s stream from #%d to #%d\n",
                              av_get_media_type_string ((AVMediaType)codec_type), old_index, stream_index);
 
-  streamComponentClose (videoState, old_index);
+  videoState->streamComponentClose (old_index);
   streamComponentOpen (videoState, stream_index);
   }
 //}}}
