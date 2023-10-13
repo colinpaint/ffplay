@@ -158,78 +158,79 @@ const struct sTextureFormatEntry {
   };
 //}}}
 
+namespace {
+  //{{{  context vars
+  static SDL_Window* gWindow = NULL;
 
-//{{{  context vars
-static SDL_Window* gWindow = NULL;
+  static SDL_Renderer* gRenderer = NULL;
+  static SDL_RendererInfo gRendererInfo = {0};
 
-static SDL_Renderer* gRenderer = NULL;
-static SDL_RendererInfo gRendererInfo = {0};
+  static SDL_AudioDeviceID gAudioDevice;
+  static int64_t gAudioCallbackTime = 0;
 
-static SDL_AudioDeviceID gAudioDevice;
-static int64_t gAudioCallbackTime = 0;
+  static int gFullScreen = 0;
+  //}}}
+  //{{{  option vars
+  static const AVInputFormat* gInputFileFormat;
+  static const char* gFilename;
+  static const char* gWindowTitle;
 
-static int gFullScreen = 0;
-//}}}
-//{{{  option vars
-static const AVInputFormat* gInputFileFormat;
-static const char* gFilename;
-static const char* gWindowTitle;
+  static int default_width  = 640;
+  static int default_height = 480;
+  static int screen_width  = 0;
+  static int screen_height = 0;
+  static int screen_left = SDL_WINDOWPOS_CENTERED;
+  static int screen_top = SDL_WINDOWPOS_CENTERED;
 
-static int default_width  = 640;
-static int default_height = 480;
-static int screen_width  = 0;
-static int screen_height = 0;
-static int screen_left = SDL_WINDOWPOS_CENTERED;
-static int screen_top = SDL_WINDOWPOS_CENTERED;
+  static int gAudioDisable;
+  static int gVideoDisable;
+  static int gSubtitleDisable;
 
-static int gAudioDisable;
-static int gVideoDisable;
-static int gSubtitleDisable;
+  static int decoder_reorder_pts = -1;
+  static const char* wanted_stream_spec[AVMEDIA_TYPE_NB] = {0};
+  static int seek_by_bytes = -1;
+  static float seek_interval = 10;
+  static int gDisplayDisable;
+  static int gBorderless;
+  static int alwaysontop;
 
-static int decoder_reorder_pts = -1;
-static const char* wanted_stream_spec[AVMEDIA_TYPE_NB] = {0};
-static int seek_by_bytes = -1;
-static float seek_interval = 10;
-static int gDisplayDisable;
-static int gBorderless;
-static int alwaysontop;
+  static int show_status = -1;
 
-static int show_status = -1;
+  static int startup_volume = 100;
+  static int av_sync_type = AV_SYNC_AUDIO_MASTER;
+  static int64_t gStartTime = AV_NOPTS_VALUE;
+  static int64_t gDuration = AV_NOPTS_VALUE;
 
-static int startup_volume = 100;
-static int av_sync_type = AV_SYNC_AUDIO_MASTER;
-static int64_t gStartTime = AV_NOPTS_VALUE;
-static int64_t gDuration = AV_NOPTS_VALUE;
+  static int fast = 0;
+  static int genpts = 0;
+  static int lowres = 0;
 
-static int fast = 0;
-static int genpts = 0;
-static int lowres = 0;
+  static int autoexit;
+  static int gExitOnKeydown;
+  static int exit_on_mousedown;
 
-static int autoexit;
-static int gExitOnKeydown;
-static int exit_on_mousedown;
+  static int loop = 1;
+  static int framedrop = -1;
+  static int infinite_buffer = -1;
 
-static int loop = 1;
-static int framedrop = -1;
-static int infinite_buffer = -1;
+  static enum eShowMode show_mode = SHOW_MODE_NONE;
+  static const char* audio_codec_name;
+  static const char* subtitle_codec_name;
+  static const char* video_codec_name;
+  double rdftspeed = 0.02;
 
-static enum eShowMode show_mode = SHOW_MODE_NONE;
-static const char* audio_codec_name;
-static const char* subtitle_codec_name;
-static const char* video_codec_name;
-double rdftspeed = 0.02;
+  static int64_t cursor_last_shown;
+  static int cursor_hidden = 0;
 
-static int64_t cursor_last_shown;
-static int cursor_hidden = 0;
+  static const char** vfilters_list = NULL;
+  static int nb_vfilters = 0;
+  static char* afilters = NULL;
 
-static const char** vfilters_list = NULL;
-static int nb_vfilters = 0;
-static char* afilters = NULL;
-
-static int autorotate = 1;
-static int find_stream_info = 1;
-static int filter_nbthreads = 0;
-//}}}
+  static int autorotate = 1;
+  static int find_stream_info = 1;
+  static int filter_nbthreads = 0;
+  //}}}
+  }
 
 //{{{
 class sPacketList {
@@ -931,7 +932,7 @@ public:
   };
 //}}}
 //{{{
-int decoderInit (sDecoder* d, AVCodecContext* avctx, sPacketQueue* queue, SDL_cond *empty_queue_cond) {
+int decoderInit (sDecoder* d, AVCodecContext* avctx, sPacketQueue* queue, SDL_cond* empty_queue_cond) {
 
   memset (d, 0, sizeof(sDecoder));
 
@@ -964,7 +965,7 @@ int decoderStart (sDecoder* d, int (*fn)(void*), const char* thread_name, void* 
   }
 //}}}
 //{{{
-int decodeFrame (sDecoder* decoder, AVFrame* frame, AVSubtitle *sub) {
+int decodeFrame (sDecoder* decoder, AVFrame* frame, AVSubtitle* sub) {
 
   int ret = AVERROR(EAGAIN);
 
@@ -1075,200 +1076,201 @@ int decodeFrame (sDecoder* decoder, AVFrame* frame, AVSubtitle *sub) {
   }
 //}}}
 
-//  video
-//{{{
-void calculateDisplayRect (SDL_Rect* rect,
-                           int scr_xleft, int scr_ytop, int scr_width, int scr_height,
-                           int pic_width, int pic_height, AVRational pic_sar) {
+namespace {
+  //  video
+  //{{{
+  void calculateDisplayRect (SDL_Rect* rect,
+                             int scr_xleft, int scr_ytop, int scr_width, int scr_height,
+                             int pic_width, int pic_height, AVRational pic_sar) {
 
-  AVRational aspect_ratio = pic_sar;
+    AVRational aspect_ratio = pic_sar;
 
-  if (av_cmp_q (aspect_ratio, av_make_q (0, 1)) <= 0)
-    aspect_ratio = av_make_q (1, 1);
+    if (av_cmp_q (aspect_ratio, av_make_q (0, 1)) <= 0)
+      aspect_ratio = av_make_q (1, 1);
 
-  aspect_ratio = av_mul_q (aspect_ratio, av_make_q(pic_width, pic_height));
+    aspect_ratio = av_mul_q (aspect_ratio, av_make_q(pic_width, pic_height));
 
-  /* XXX: we suppose the screen has a 1.0 pixel ratio */
-  int height = scr_height;
-  int width = av_rescale (height, aspect_ratio.num, aspect_ratio.den) & ~1;
-  if (width > scr_width) {
-    width = scr_width;
-    height = av_rescale (width, aspect_ratio.den, aspect_ratio.num) & ~1;
-    }
-
-  int x = (scr_width - width) / 2;
-  int y = (scr_height - height) / 2;
-  rect->x = scr_xleft + x;
-  rect->y = scr_ytop  + y;
-  rect->w = FFMAX((int)width,  1);
-  rect->h = FFMAX((int)height, 1);
-  }
-//}}}
-//{{{
-void drawRectangle (int x, int y, int width, int height) {
-
-  SDL_Rect rect;
-  rect.x = x;
-  rect.y = y;
-  rect.w = width;
-  rect.h = height;
-
-  if (width && height)
-    SDL_RenderFillRect (gRenderer, &rect);
-  }
-//}}}
-//{{{
-void setSdlYuvConversionMode (AVFrame* frame) {
-
-  SDL_YUV_CONVERSION_MODE mode = SDL_YUV_CONVERSION_AUTOMATIC;
-
-  if (frame && (frame->format == AV_PIX_FMT_YUV420P
-                || frame->format == AV_PIX_FMT_YUYV422
-                || frame->format == AV_PIX_FMT_UYVY422)) {
-    if (frame->color_range == AVCOL_RANGE_JPEG)
-       mode = SDL_YUV_CONVERSION_JPEG;
-    else if (frame->colorspace == AVCOL_SPC_BT709)
-      mode = SDL_YUV_CONVERSION_BT709;
-    else if (frame->colorspace == AVCOL_SPC_BT470BG || frame->colorspace == AVCOL_SPC_SMPTE170M)
-      mode = SDL_YUV_CONVERSION_BT601;
-    }
-
-  SDL_SetYUVConversionMode (mode); /* FIXME: no support for linear transfer */
-  }
-//}}}
-//{{{
-void getSdlPixfmtAndBlendmode (int format, Uint32* sdl_pix_fmt, SDL_BlendMode* sdl_blendmode) {
-
-  *sdl_blendmode = SDL_BLENDMODE_NONE;
-  if (format == AV_PIX_FMT_RGB32   ||
-      format == AV_PIX_FMT_RGB32_1 ||
-      format == AV_PIX_FMT_BGR32   ||
-      format == AV_PIX_FMT_BGR32_1)
-    *sdl_blendmode = SDL_BLENDMODE_BLEND;
-
-  *sdl_pix_fmt = SDL_PIXELFORMAT_UNKNOWN;
-  for (int i = 0; i < FF_ARRAY_ELEMS (sdlTextureFormatMap) - 1; i++) {
-    if (format == sdlTextureFormatMap[i].format) {
-      *sdl_pix_fmt = sdlTextureFormatMap[i].texture_fmt;
-      return;
-      }
-    }
-  }
-//}}}
-//{{{
-int reallocTexture (SDL_Texture** texture, Uint32 new_format,
-                            int new_width, int new_height, SDL_BlendMode blendmode, int initTexture) {
-
-  Uint32 format;
-  int access, w, h;
-  if (!*texture
-      || SDL_QueryTexture (*texture, &format, &access, &w, &h) < 0
-      || new_width != w || new_height != h
-      || new_format != format) {
-
-    if (*texture)
-      SDL_DestroyTexture (*texture);
-
-    if (!(*texture = SDL_CreateTexture (gRenderer, new_format, SDL_TEXTUREACCESS_STREAMING, new_width, new_height)))
-      return -1;
-
-    if (SDL_SetTextureBlendMode (*texture, blendmode) < 0)
-      return -1;
-
-    if (initTexture) {
-      void* pixels;
-      int pitch;
-      if (SDL_LockTexture (*texture, NULL, &pixels, &pitch) < 0)
-        return -1;
-
-      memset (pixels, 0, pitch * new_height);
-      SDL_UnlockTexture (*texture);
+    /* XXX: we suppose the screen has a 1.0 pixel ratio */
+    int height = scr_height;
+    int width = av_rescale (height, aspect_ratio.num, aspect_ratio.den) & ~1;
+    if (width > scr_width) {
+      width = scr_width;
+      height = av_rescale (width, aspect_ratio.den, aspect_ratio.num) & ~1;
       }
 
-    av_log (NULL, AV_LOG_VERBOSE, "Created %dx%d texture with %s.\n", new_width, new_height, SDL_GetPixelFormatName(new_format));
+    int x = (scr_width - width) / 2;
+    int y = (scr_height - height) / 2;
+    rect->x = scr_xleft + x;
+    rect->y = scr_ytop  + y;
+    rect->w = FFMAX((int)width,  1);
+    rect->h = FFMAX((int)height, 1);
     }
+  //}}}
+  //{{{
+  void drawRectangle (int x, int y, int width, int height) {
 
-  return 0;
-  }
-//}}}
-//{{{
-int uploadTexture (SDL_Texture** tex, AVFrame* frame) {
+    SDL_Rect rect;
+    rect.x = x;
+    rect.y = y;
+    rect.w = width;
+    rect.h = height;
 
-  Uint32 sdl_pix_fmt;
-  SDL_BlendMode sdl_blendmode;
-  getSdlPixfmtAndBlendmode (frame->format, &sdl_pix_fmt, &sdl_blendmode);
+    if (width && height)
+      SDL_RenderFillRect (gRenderer, &rect);
+    }
+  //}}}
+  //{{{
+  void setSdlYuvConversionMode (AVFrame* frame) {
 
-  if (reallocTexture (tex, sdl_pix_fmt == SDL_PIXELFORMAT_UNKNOWN ? SDL_PIXELFORMAT_ARGB8888 : sdl_pix_fmt,
-                      frame->width, frame->height, sdl_blendmode, 0) < 0)
-    return -1;
+    SDL_YUV_CONVERSION_MODE mode = SDL_YUV_CONVERSION_AUTOMATIC;
 
-  int ret = 0;
-  switch (sdl_pix_fmt) {
-    case SDL_PIXELFORMAT_IYUV:
-      if (frame->linesize[0] > 0 && frame->linesize[1] > 0 && frame->linesize[2] > 0)
-        ret = SDL_UpdateYUVTexture (*tex, NULL,
-                                    frame->data[0], frame->linesize[0],
-                                    frame->data[1], frame->linesize[1],
-                                    frame->data[2], frame->linesize[2]);
-      else if (frame->linesize[0] < 0 && frame->linesize[1] < 0 && frame->linesize[2] < 0)
-        ret = SDL_UpdateYUVTexture (*tex, NULL,
-                                    frame->data[0] + frame->linesize[0] * (frame->height - 1), -frame->linesize[0],
-                                    frame->data[1] + frame->linesize[1] * (AV_CEIL_RSHIFT(frame->height, 1) - 1), -frame->linesize[1],
-                                    frame->data[2] + frame->linesize[2] * (AV_CEIL_RSHIFT(frame->height, 1) - 1), -frame->linesize[2]);
-      else {
-        av_log (NULL, AV_LOG_ERROR, "Mixed negative and positive linesizes are not supported.\n");
-        return -1;
+    if (frame && (frame->format == AV_PIX_FMT_YUV420P
+                  || frame->format == AV_PIX_FMT_YUYV422
+                  || frame->format == AV_PIX_FMT_UYVY422)) {
+      if (frame->color_range == AVCOL_RANGE_JPEG)
+         mode = SDL_YUV_CONVERSION_JPEG;
+      else if (frame->colorspace == AVCOL_SPC_BT709)
+        mode = SDL_YUV_CONVERSION_BT709;
+      else if (frame->colorspace == AVCOL_SPC_BT470BG || frame->colorspace == AVCOL_SPC_SMPTE170M)
+        mode = SDL_YUV_CONVERSION_BT601;
+      }
+
+    SDL_SetYUVConversionMode (mode); /* FIXME: no support for linear transfer */
+    }
+  //}}}
+  //{{{
+  void getSdlPixfmtAndBlendmode (int format, Uint32* sdl_pix_fmt, SDL_BlendMode* sdl_blendmode) {
+
+    *sdl_blendmode = SDL_BLENDMODE_NONE;
+    if (format == AV_PIX_FMT_RGB32   ||
+        format == AV_PIX_FMT_RGB32_1 ||
+        format == AV_PIX_FMT_BGR32   ||
+        format == AV_PIX_FMT_BGR32_1)
+      *sdl_blendmode = SDL_BLENDMODE_BLEND;
+
+    *sdl_pix_fmt = SDL_PIXELFORMAT_UNKNOWN;
+    for (int i = 0; i < FF_ARRAY_ELEMS (sdlTextureFormatMap) - 1; i++) {
+      if (format == sdlTextureFormatMap[i].format) {
+        *sdl_pix_fmt = sdlTextureFormatMap[i].texture_fmt;
+        return;
         }
-      break;
-
-    default:
-      if (frame->linesize[0] < 0)
-        ret = SDL_UpdateTexture (*tex, NULL,
-                                 frame->data[0] + frame->linesize[0] * (frame->height - 1),
-                                 -frame->linesize[0]);
-      else
-        ret = SDL_UpdateTexture (*tex, NULL,
-                                 frame->data[0],
-                                 frame->linesize[0]);
-      break;
+      }
     }
+  //}}}
+  //{{{
+  int reallocTexture (SDL_Texture** texture, Uint32 new_format,
+                              int new_width, int new_height, SDL_BlendMode blendmode, int initTexture) {
 
-  return ret;
+    Uint32 format;
+    int access, w, h;
+    if (!*texture
+        || SDL_QueryTexture (*texture, &format, &access, &w, &h) < 0
+        || new_width != w || new_height != h
+        || new_format != format) {
+
+      if (*texture)
+        SDL_DestroyTexture (*texture);
+
+      if (!(*texture = SDL_CreateTexture (gRenderer, new_format, SDL_TEXTUREACCESS_STREAMING, new_width, new_height)))
+        return -1;
+
+      if (SDL_SetTextureBlendMode (*texture, blendmode) < 0)
+        return -1;
+
+      if (initTexture) {
+        void* pixels;
+        int pitch;
+        if (SDL_LockTexture (*texture, NULL, &pixels, &pitch) < 0)
+          return -1;
+
+        memset (pixels, 0, pitch * new_height);
+        SDL_UnlockTexture (*texture);
+        }
+
+      av_log (NULL, AV_LOG_VERBOSE, "Created %dx%d texture with %s.\n", new_width, new_height, SDL_GetPixelFormatName(new_format));
+      }
+
+    return 0;
+    }
+  //}}}
+  //{{{
+  int uploadTexture (SDL_Texture** tex, AVFrame* frame) {
+
+    Uint32 sdl_pix_fmt;
+    SDL_BlendMode sdl_blendmode;
+    getSdlPixfmtAndBlendmode (frame->format, &sdl_pix_fmt, &sdl_blendmode);
+
+    if (reallocTexture (tex, sdl_pix_fmt == SDL_PIXELFORMAT_UNKNOWN ? SDL_PIXELFORMAT_ARGB8888 : sdl_pix_fmt,
+                        frame->width, frame->height, sdl_blendmode, 0) < 0)
+      return -1;
+
+    int ret = 0;
+    switch (sdl_pix_fmt) {
+      case SDL_PIXELFORMAT_IYUV:
+        if (frame->linesize[0] > 0 && frame->linesize[1] > 0 && frame->linesize[2] > 0)
+          ret = SDL_UpdateYUVTexture (*tex, NULL,
+                                      frame->data[0], frame->linesize[0],
+                                      frame->data[1], frame->linesize[1],
+                                      frame->data[2], frame->linesize[2]);
+        else if (frame->linesize[0] < 0 && frame->linesize[1] < 0 && frame->linesize[2] < 0)
+          ret = SDL_UpdateYUVTexture (*tex, NULL,
+                                      frame->data[0] + frame->linesize[0] * (frame->height - 1), -frame->linesize[0],
+                                      frame->data[1] + frame->linesize[1] * (AV_CEIL_RSHIFT(frame->height, 1) - 1), -frame->linesize[1],
+                                      frame->data[2] + frame->linesize[2] * (AV_CEIL_RSHIFT(frame->height, 1) - 1), -frame->linesize[2]);
+        else {
+          av_log (NULL, AV_LOG_ERROR, "Mixed negative and positive linesizes are not supported.\n");
+          return -1;
+          }
+        break;
+
+      default:
+        if (frame->linesize[0] < 0)
+          ret = SDL_UpdateTexture (*tex, NULL,
+                                   frame->data[0] + frame->linesize[0] * (frame->height - 1),
+                                   -frame->linesize[0]);
+        else
+          ret = SDL_UpdateTexture (*tex, NULL,
+                                   frame->data[0],
+                                   frame->linesize[0]);
+        break;
+      }
+
+    return ret;
+    }
+  //}}}
+  //{{{
+  int computeMod (int a, int b) {
+    return a < 0 ? a%b + b : a%b;
+    }
+  //}}}
+  //{{{
+  void set_default_window_size (int width, int height, AVRational sar) {
+
+    SDL_Rect rect;
+    int max_width  = screen_width  ? screen_width  : INT_MAX;
+    int max_height = screen_height ? screen_height : INT_MAX;
+    if (max_width == INT_MAX && max_height == INT_MAX)
+      max_height = height;
+
+    calculateDisplayRect (&rect, 0, 0, max_width, max_height, width, height, sar);
+
+    default_width = rect.w;
+    default_height = rect.h;
+    }
+  //}}}
+  //  audio
+  //{{{
+  int compareAudioFormats (enum AVSampleFormat fmt1, int64_t channel_count1,
+                                  enum AVSampleFormat fmt2, int64_t channel_count2) {
+  // If channel count == 1, planar and non-planar formats are the same
+
+    if (channel_count1 == 1 && channel_count2 == 1)
+      return av_get_packed_sample_fmt (fmt1) != av_get_packed_sample_fmt(fmt2);
+    else
+      return channel_count1 != channel_count2 || fmt1 != fmt2;
+    }
+  //}}}
   }
-//}}}
-//{{{
-int computeMod (int a, int b) {
-  return a < 0 ? a%b + b : a%b;
-  }
-//}}}
-//{{{
-void set_default_window_size (int width, int height, AVRational sar) {
-
-  SDL_Rect rect;
-  int max_width  = screen_width  ? screen_width  : INT_MAX;
-  int max_height = screen_height ? screen_height : INT_MAX;
-  if (max_width == INT_MAX && max_height == INT_MAX)
-    max_height = height;
-
-  calculateDisplayRect (&rect, 0, 0, max_width, max_height, width, height, sar);
-
-  default_width = rect.w;
-  default_height = rect.h;
-  }
-//}}}
-
-//  audio
-//{{{
-int compareAudioFormats (enum AVSampleFormat fmt1, int64_t channel_count1,
-                                enum AVSampleFormat fmt2, int64_t channel_count2) {
-// If channel count == 1, planar and non-planar formats are the same
-
-  if (channel_count1 == 1 && channel_count2 == 1)
-    return av_get_packed_sample_fmt (fmt1) != av_get_packed_sample_fmt(fmt2);
-  else
-    return channel_count1 != channel_count2 || fmt1 != fmt2;
-  }
-//}}}
 
 //{{{
 class sVideoState {
@@ -2482,7 +2484,7 @@ int audioOpen (void* opaque, AVChannelLayout* wantedChannelLayout, int wantedSam
 // thread
 //{{{
 int configureFilterGraph (AVFilterGraph* graph, const char* filtergraph,
-                                  AVFilterContext *source_ctx, AVFilterContext *sink_ctx) {
+                          AVFilterContext *source_ctx, AVFilterContext *sink_ctx) {
 
   int ret, i;
   int nb_filters = graph->nb_filters;
@@ -2652,6 +2654,80 @@ fail:
   }
 //}}}
 //{{{
+int configureAudioFilters (sVideoState* videoState, const char* filters, int force_output_format) {
+
+  static const enum AVSampleFormat sample_fmts[] = { AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_NONE };
+  int sample_rates[2] = { 0, -1 };
+
+  AVFilterContext* filt_asrc = NULL;
+  AVFilterContext* filt_asink = NULL;
+
+  char aresample_swr_opts[512] = "";
+  const AVDictionaryEntry* entry = NULL;
+  AVBPrint bp;
+  char asrc_args[256];
+  int ret;
+
+  avfilter_graph_free (&videoState->agraph);
+  if (!(videoState->agraph = avfilter_graph_alloc()))
+      return AVERROR(ENOMEM);
+  videoState->agraph->nb_threads = filter_nbthreads;
+
+  av_bprint_init (&bp, 0, AV_BPRINT_SIZE_AUTOMATIC);
+
+  while ((entry = av_dict_iterate(swr_opts, entry)))
+    av_strlcatf (aresample_swr_opts, sizeof(aresample_swr_opts), "%s=%s:", entry->key, entry->value);
+  if (strlen (aresample_swr_opts))
+      aresample_swr_opts[strlen(aresample_swr_opts)-1] = '\0';
+  av_opt_set (videoState->agraph, "aresample_swr_opts", aresample_swr_opts, 0);
+
+  av_channel_layout_describe_bprint (&videoState->audio_filter_src.ch_layout, &bp);
+
+  ret = snprintf (asrc_args, sizeof(asrc_args),
+                  "sample_rate=%d:sample_fmt=%s:time_base=%d/%d:channel_layout=%s",
+                  videoState->audio_filter_src.freq, av_get_sample_fmt_name (videoState->audio_filter_src.fmt),
+                  1, videoState->audio_filter_src.freq, bp.str);
+
+  ret = avfilter_graph_create_filter (&filt_asrc, avfilter_get_by_name ("abuffer"), "ffplay_abuffer",
+                                      asrc_args, NULL, videoState->agraph);
+  if (ret < 0)
+     goto end;
+
+  ret = avfilter_graph_create_filter (&filt_asink, avfilter_get_by_name ("abuffersink"), "ffplay_abuffersink",
+                                      NULL, NULL, videoState->agraph);
+  if (ret < 0)
+    goto end;
+
+  if ((ret = av_opt_set_int_list (filt_asink, "sample_fmts", sample_fmts, (uint64_t)AV_SAMPLE_FMT_NONE, AV_OPT_SEARCH_CHILDREN)) < 0)
+    goto end;
+  if ((ret = av_opt_set_int (filt_asink, "all_channel_counts", 1, (uint64_t)AV_OPT_SEARCH_CHILDREN)) < 0)
+    goto end;
+
+  if (force_output_format) {
+    sample_rates[0] = videoState->audio_tgt.freq;
+    if ((ret = av_opt_set_int (filt_asink, "all_channel_counts", 0, (uint64_t)AV_OPT_SEARCH_CHILDREN)) < 0)
+      goto end;
+    if ((ret = av_opt_set (filt_asink, "ch_layouts", bp.str, AV_OPT_SEARCH_CHILDREN)) < 0)
+      goto end;
+    if ((ret = av_opt_set_int_list (filt_asink, "sample_rates", sample_rates, (uint64_t)-1, AV_OPT_SEARCH_CHILDREN)) < 0)
+      goto end;
+    }
+
+  if ((ret = configureFilterGraph (videoState->agraph, filters, filt_asrc, filt_asink)) < 0)
+    goto end;
+
+  videoState->in_audio_filter  = filt_asrc;
+  videoState->out_audio_filter = filt_asink;
+
+end:
+  if (ret < 0)
+    avfilter_graph_free (&videoState->agraph);
+  av_bprint_finalize (&bp, NULL);
+
+  return ret;
+  }
+//}}}
+//{{{
 int getVideoFrame (sVideoState* videoState, AVFrame* frame) {
 
   int got_picture;
@@ -2683,6 +2759,7 @@ int getVideoFrame (sVideoState* videoState, AVFrame* frame) {
   return got_picture;
   }
 //}}}
+
 //{{{
 int videoThread (void* arg) {
 
@@ -2799,80 +2876,6 @@ the_end:
   avfilter_graph_free (&graph);
   av_frame_free (&frame);
   return 0;
-  }
-//}}}
-//{{{
-int configureAudioFilters (sVideoState* videoState, const char* filters, int force_output_format) {
-
-  static const enum AVSampleFormat sample_fmts[] = { AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_NONE };
-  int sample_rates[2] = { 0, -1 };
-
-  AVFilterContext* filt_asrc = NULL;
-  AVFilterContext* filt_asink = NULL;
-
-  char aresample_swr_opts[512] = "";
-  const AVDictionaryEntry* entry = NULL;
-  AVBPrint bp;
-  char asrc_args[256];
-  int ret;
-
-  avfilter_graph_free (&videoState->agraph);
-  if (!(videoState->agraph = avfilter_graph_alloc()))
-      return AVERROR(ENOMEM);
-  videoState->agraph->nb_threads = filter_nbthreads;
-
-  av_bprint_init (&bp, 0, AV_BPRINT_SIZE_AUTOMATIC);
-
-  while ((entry = av_dict_iterate(swr_opts, entry)))
-    av_strlcatf (aresample_swr_opts, sizeof(aresample_swr_opts), "%s=%s:", entry->key, entry->value);
-  if (strlen (aresample_swr_opts))
-      aresample_swr_opts[strlen(aresample_swr_opts)-1] = '\0';
-  av_opt_set (videoState->agraph, "aresample_swr_opts", aresample_swr_opts, 0);
-
-  av_channel_layout_describe_bprint (&videoState->audio_filter_src.ch_layout, &bp);
-
-  ret = snprintf (asrc_args, sizeof(asrc_args),
-                  "sample_rate=%d:sample_fmt=%s:time_base=%d/%d:channel_layout=%s",
-                  videoState->audio_filter_src.freq, av_get_sample_fmt_name (videoState->audio_filter_src.fmt),
-                  1, videoState->audio_filter_src.freq, bp.str);
-
-  ret = avfilter_graph_create_filter (&filt_asrc, avfilter_get_by_name ("abuffer"), "ffplay_abuffer",
-                                      asrc_args, NULL, videoState->agraph);
-  if (ret < 0)
-     goto end;
-
-  ret = avfilter_graph_create_filter (&filt_asink, avfilter_get_by_name ("abuffersink"), "ffplay_abuffersink",
-                                      NULL, NULL, videoState->agraph);
-  if (ret < 0)
-    goto end;
-
-  if ((ret = av_opt_set_int_list (filt_asink, "sample_fmts", sample_fmts, (uint64_t)AV_SAMPLE_FMT_NONE, AV_OPT_SEARCH_CHILDREN)) < 0)
-    goto end;
-  if ((ret = av_opt_set_int (filt_asink, "all_channel_counts", 1, (uint64_t)AV_OPT_SEARCH_CHILDREN)) < 0)
-    goto end;
-
-  if (force_output_format) {
-    sample_rates[0] = videoState->audio_tgt.freq;
-    if ((ret = av_opt_set_int (filt_asink, "all_channel_counts", 0, (uint64_t)AV_OPT_SEARCH_CHILDREN)) < 0)
-      goto end;
-    if ((ret = av_opt_set (filt_asink, "ch_layouts", bp.str, AV_OPT_SEARCH_CHILDREN)) < 0)
-      goto end;
-    if ((ret = av_opt_set_int_list (filt_asink, "sample_rates", sample_rates, (uint64_t)-1, AV_OPT_SEARCH_CHILDREN)) < 0)
-      goto end;
-    }
-
-  if ((ret = configureFilterGraph (videoState->agraph, filters, filt_asrc, filt_asink)) < 0)
-    goto end;
-
-  videoState->in_audio_filter  = filt_asrc;
-  videoState->out_audio_filter = filt_asink;
-
-end:
-  if (ret < 0)
-    avfilter_graph_free (&videoState->agraph);
-  av_bprint_finalize (&bp, NULL);
-
-  return ret;
   }
 //}}}
 //{{{
