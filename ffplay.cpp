@@ -378,10 +378,11 @@ const struct sTextureFormatEntry {
   };
 //}}}
 //{{{  options vars
-static const AVInputFormat* file_iformat;
-static const char* inputFilename;
+static const AVInputFormat* gFileIformat;
+static const char* gFilename;
 
-static const char* window_title;
+static const char* gWindowTitle;
+
 static int default_width  = 640;
 static int default_height = 480;
 static int screen_width  = 0;
@@ -390,8 +391,8 @@ static int screen_left = SDL_WINDOWPOS_CENTERED;
 static int screen_top = SDL_WINDOWPOS_CENTERED;
 
 static int gAudioDisable;
-static int video_disable;
-static int subtitle_disable;
+static int gVideoDisable;
+static int gSubtitleDisable;
 
 static const char* wanted_stream_spec[AVMEDIA_TYPE_NB] = {0};
 static int seek_by_bytes = -1;
@@ -413,7 +414,7 @@ static int lowres = 0;
 static int decoder_reorder_pts = -1;
 
 static int autoexit;
-static int exit_on_keydown;
+static int gExitOnKeydown;
 static int exit_on_mousedown;
 
 static int loop = 1;
@@ -1417,9 +1418,9 @@ static int videoOpen (sVideoState* videoState) {
   int width = screen_width ? screen_width : default_width;
   int height = screen_height ? screen_height : default_height;
 
-  if (!window_title)
-    window_title = inputFilename;
-  SDL_SetWindowTitle (window, window_title);
+  if (!gWindowTitle)
+    gWindowTitle = gFilename;
+  SDL_SetWindowTitle (window, gWindowTitle);
 
   SDL_SetWindowSize (window, width, height);
   SDL_SetWindowPosition (window, screen_left, screen_top);
@@ -3346,8 +3347,8 @@ static int readThread (void* arg) {
 
   videoState->max_frame_duration = (ic->iformat->flags & AVFMT_TS_DISCONT) ? 10.0 : 3600.0;
 
-  if (!window_title && (entry = av_dict_get (ic->metadata, "title", NULL, 0)))
-    window_title = av_asprintf ("%s - %s", entry->value, inputFilename);
+  if (!gWindowTitle && (entry = av_dict_get (ic->metadata, "title", NULL, 0)))
+    gWindowTitle = av_asprintf ("%s - %s", entry->value, gFilename);
 
   /* if seeking requested, we execute it */
   if (gStartTime != AV_NOPTS_VALUE) {
@@ -3385,14 +3386,14 @@ static int readThread (void* arg) {
       }
     }
 
-  if (!video_disable)
+  if (!gVideoDisable)
     st_index[AVMEDIA_TYPE_VIDEO] = av_find_best_stream (ic, AVMEDIA_TYPE_VIDEO,
                                                         st_index[AVMEDIA_TYPE_VIDEO], -1, NULL, 0);
   if (!gAudioDisable)
     st_index[AVMEDIA_TYPE_AUDIO] = av_find_best_stream (ic, AVMEDIA_TYPE_AUDIO,
                                                         st_index[AVMEDIA_TYPE_AUDIO],
                                                         st_index[AVMEDIA_TYPE_VIDEO], NULL, 0);
-  if (!video_disable && !subtitle_disable)
+  if (!gVideoDisable && !gSubtitleDisable)
     st_index[AVMEDIA_TYPE_SUBTITLE] = av_find_best_stream (ic, AVMEDIA_TYPE_SUBTITLE,
                                                            st_index[AVMEDIA_TYPE_SUBTITLE],
                                                            (st_index[AVMEDIA_TYPE_AUDIO] >= 0 ?
@@ -3447,7 +3448,7 @@ static int readThread (void* arg) {
     #if CONFIG_RTSP_DEMUXER || CONFIG_MMSH_PROTOCOL
       if (videoState->paused &&
           (!strcmp (ic->iformat->name, "rtsp") ||
-                   (ic->pb && !strncmp (inputFilename, "mmsh:", 5)))) {
+                   (ic->pb && !strncmp (gFilename, "mmsh:", 5)))) {
         /* wait 10 ms to avoid trying to get another packet */
         SDL_Delay (10);
         continue;
@@ -3676,7 +3677,7 @@ static void eventLoop (sVideoState* videoState) {
     switch (event.type) {
       //{{{
       case SDL_KEYDOWN:
-        if (exit_on_keydown || event.key.keysym.sym == SDLK_ESCAPE || event.key.keysym.sym == SDLK_q) {
+        if (gExitOnKeydown || event.key.keysym.sym == SDLK_ESCAPE || event.key.keysym.sym == SDLK_q) {
           //{{{  escape, exit
           do_exit (videoState);
           break;
@@ -3922,8 +3923,8 @@ static int opt_height (void* optctx, const char* opt, const char* arg) {
 //{{{
 static int opt_format (void* optctx, const char* opt, const char* arg) {
 
-  file_iformat = av_find_input_format(arg);
-  if (!file_iformat) {
+  gFileIformat = av_find_input_format (arg);
+  if (!gFileIformat) {
     av_log (NULL, AV_LOG_FATAL, "Unknown input format: %s\n", arg);
     return AVERROR(EINVAL);
     }
@@ -3969,15 +3970,15 @@ static int opt_show_mode (void* optctx, const char* opt, const char* arg) {
 //{{{
 static int opt_input_file (void* optctx, const char* filename) {
 
-  if (inputFilename) {
+  if (gFilename) {
     av_log (NULL, AV_LOG_FATAL,
-            "Argument '%s' provided as input filename, but '%s' was already specified.\n", filename, inputFilename);
+            "Argument '%s' provided as input filename, but '%s' was already specified.\n", filename, gFilename);
     return AVERROR(EINVAL);
     }
 
-  if (!strcmp(filename, "-"))
+  if (!strcmp (filename, "-"))
     filename = "fd:";
-  inputFilename = filename;
+  gFilename = filename;
 
   return 0;
   }
@@ -4017,52 +4018,61 @@ static const OptionDef options[] = {
   { "x", HAS_ARG, { .func_arg = opt_width }, "force displayed width", "width" },
   { "y", HAS_ARG, { .func_arg = opt_height }, "force displayed height", "height" },
   { "fs", OPT_BOOL, { &gIsFullScreen }, "force full screen" },
-  
+
   { "an", OPT_BOOL, { &gAudioDisable }, "disable audio" },
-  { "vn", OPT_BOOL, { &video_disable }, "disable video" },
-  { "sn", OPT_BOOL, { &subtitle_disable }, "disable subtitling" },
-  
+  { "vn", OPT_BOOL, { &gVideoDisable }, "disable video" },
+  { "sn", OPT_BOOL, { &gSubtitleDisable }, "disable subtitling" },
+
   { "ast", OPT_STRING | HAS_ARG | OPT_EXPERT, { &wanted_stream_spec[AVMEDIA_TYPE_AUDIO] }, "select desired audio stream", "stream_specifier" },
   { "vst", OPT_STRING | HAS_ARG | OPT_EXPERT, { &wanted_stream_spec[AVMEDIA_TYPE_VIDEO] }, "select desired video stream", "stream_specifier" },
   { "sst", OPT_STRING | HAS_ARG | OPT_EXPERT, { &wanted_stream_spec[AVMEDIA_TYPE_SUBTITLE] }, "select desired subtitle stream", "stream_specifier" },
-  
+
   { "ss", HAS_ARG | OPT_TIME, { &gStartTime }, "seek to a given position in seconds", "pos" },
   { "t",  HAS_ARG | OPT_TIME, { &gDuration }, "play  \"duration\" seconds of audio/video", "duration" },
-  
+
   { "bytes", OPT_INT | HAS_ARG, { &seek_by_bytes }, "seek by bytes 0=off 1=on -1=auto", "val" },
   { "seek_interval", OPT_FLOAT | HAS_ARG, { &seek_interval }, "set seek interval for left/right keys, in seconds", "seconds" },
+  
   { "nodisp", OPT_BOOL, { &gDisplayDisable }, "disable graphical display" },
   { "noborder", OPT_BOOL, { &borderless }, "borderless window" },
   { "alwaysontop", OPT_BOOL, { &alwaysontop }, "window always on top" },
+  
   { "volume", OPT_INT | HAS_ARG, { &startup_volume}, "set startup volume 0=min 100=max", "volume" },
   { "f", HAS_ARG, { .func_arg = opt_format }, "force format", "fmt" },
+  
   { "stats", OPT_BOOL | OPT_EXPERT, { &show_status }, "show status", "" },
+  
   { "fast", OPT_BOOL | OPT_EXPERT, { &fast }, "non spec compliant optimizations", "" },
   { "genpts", OPT_BOOL | OPT_EXPERT, { &genpts }, "generate pts", "" },
   { "drp", OPT_INT | HAS_ARG | OPT_EXPERT, { &decoder_reorder_pts }, "let decoder reorder pts 0=off 1=on -1=auto", ""},
   { "lowres", OPT_INT | HAS_ARG | OPT_EXPERT, { &lowres }, "", "" },
   { "sync", HAS_ARG | OPT_EXPERT, { .func_arg = opt_sync }, "set audio-video sync. type (type=audio/video/ext)", "type" },
+  
   { "autoexit", OPT_BOOL | OPT_EXPERT, { &autoexit }, "exit at the end", "" },
-  { "exitonkeydown", OPT_BOOL | OPT_EXPERT, { &exit_on_keydown }, "exit on key down", "" },
+  { "exitonkeydown", OPT_BOOL | OPT_EXPERT, { &gExitOnKeydown }, "exit on key down", "" },
   { "exitonmousedown", OPT_BOOL | OPT_EXPERT, { &exit_on_mousedown }, "exit on mouse down", "" },
+  
   { "loop", OPT_INT | HAS_ARG | OPT_EXPERT, { &loop }, "set number of times the playback shall be looped", "loop count" },
   { "framedrop", OPT_BOOL | OPT_EXPERT, { &framedrop }, "drop frames when cpu is too slow", "" },
-  { "infbuf", OPT_BOOL | OPT_EXPERT, { &infinite_buffer }, "don't limit the input buffer size (useful with realtime streams)", "" },
-  { "window_title", OPT_STRING | HAS_ARG, { &window_title }, "set window title", "window title" },
   
+  { "infbuf", OPT_BOOL | OPT_EXPERT, { &infinite_buffer }, "don't limit the input buffer size (useful with realtime streams)", "" },
+  { "gWindowTitle", OPT_STRING | HAS_ARG, { &gWindowTitle }, "set window title", "window title" },
+
   { "left", OPT_INT | HAS_ARG | OPT_EXPERT, { &screen_left }, "set the x position for the left of the window", "x pos" },
   { "top", OPT_INT | HAS_ARG | OPT_EXPERT, { &screen_top }, "set the y position for the top of the window", "y pos" },
+  
   { "vf", OPT_EXPERT | HAS_ARG, { .func_arg = opt_add_vfilter }, "set video filters", "filter_graph" },
   { "af", OPT_STRING | HAS_ARG, { &afilters }, "set audio filters", "filter_graph" },
+  
   { "rdftspeed", OPT_INT | HAS_ARG| OPT_AUDIO | OPT_EXPERT, { &rdftspeed }, "rdft speed", "msecs" },
   { "showmode", HAS_ARG, { .func_arg = opt_show_mode}, "select show mode (0 = video, 1 = waves, 2 = RDFT)", "mode" },
   { "i", OPT_BOOL, { &dummy}, "read specified file", "input_file"},
-  
+
   { "codec", HAS_ARG, { .func_arg = opt_codec}, "force decoder", "decoder_name" },
   { "acodec", HAS_ARG | OPT_STRING | OPT_EXPERT, {    &audio_codec_name }, "force audio decoder",    "decoder_name" },
   { "scodec", HAS_ARG | OPT_STRING | OPT_EXPERT, { &subtitle_codec_name }, "force subtitle decoder", "decoder_name" },
   { "vcodec", HAS_ARG | OPT_STRING | OPT_EXPERT, {    &video_codec_name }, "force video decoder",    "decoder_name" },
-  
+
   { "autorotate", OPT_BOOL, { &autorotate }, "automatically rotate video", "" },
   { "find_stream_info", OPT_BOOL | OPT_INPUT | OPT_EXPERT, { &find_stream_info },
       "read and decode the streams to fill missing information with heuristics" },
@@ -4142,7 +4152,7 @@ int main (int argc, char** argv) {
   if (ret < 0)
     exit (ret == AVERROR_EXIT ? 0 : 1);
 
-  if (!inputFilename) {
+  if (!gFilename) {
     //{{{  error, exit
     show_usage();
     av_log (NULL, AV_LOG_FATAL, "An input file must be specified\n");
@@ -4153,7 +4163,7 @@ int main (int argc, char** argv) {
     //}}}
 
   if (gDisplayDisable)
-    video_disable = 1;
+    gVideoDisable = 1;
   int flags = SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER;
 
   if (gAudioDisable)
@@ -4218,7 +4228,7 @@ int main (int argc, char** argv) {
     }
     //}}}
 
-  sVideoState* videoState = streamOpen (inputFilename, file_iformat);
+  sVideoState* videoState = streamOpen (gFilename, gFileIformat);
   if (!videoState) {
     av_log (NULL, AV_LOG_FATAL, "Failed to initialize sVideoState!\n");
     do_exit (NULL);
