@@ -993,6 +993,22 @@ public:
     }
   //}}}
   //{{{
+  int decoderStart (int (*fn)(void*), const char* thread_name, void* arg) {
+
+    queue->packet_queue_start ();
+
+    decoder_tid = SDL_CreateThread (fn, thread_name, arg);
+    if (!decoder_tid) {
+      //{{{  error return
+      av_log (NULL, AV_LOG_ERROR, "SDL_CreateThread(): %s\n", SDL_GetError());
+      return AVERROR(ENOMEM);
+      }
+      //}}}
+
+    return 0;
+    }
+  //}}}
+  //{{{
   void decoderAbort (sFrameQueue* frameQueue) {
 
     queue->packet_queue_abort();
@@ -1030,22 +1046,7 @@ public:
   SDL_Thread* decoder_tid;
   };
 //}}}
-//{{{
-int decoderStart (sDecoder* d, int (*fn)(void*), const char* thread_name, void* arg) {
 
-  d->queue->packet_queue_start ();
-
-  d->decoder_tid = SDL_CreateThread (fn, thread_name, arg);
-  if (!d->decoder_tid) {
-    //{{{  error return
-    av_log (NULL, AV_LOG_ERROR, "SDL_CreateThread(): %s\n", SDL_GetError());
-    return AVERROR(ENOMEM);
-    }
-    //}}}
-
-  return 0;
-  }
-//}}}
 //{{{
 int decodeFrame (sDecoder* decoder, AVFrame* frame, AVSubtitle* sub) {
 
@@ -1157,7 +1158,6 @@ int decodeFrame (sDecoder* decoder, AVFrame* frame, AVSubtitle* sub) {
     }
   }
 //}}}
-
 //{{{
 class sVideoState {
 public:
@@ -3089,7 +3089,7 @@ int streamComponentOpen (sVideoState* videoState, int stream_index) {
         videoState->auddec.start_pts = videoState->audioStream->start_time;
         videoState->auddec.start_pts_tb = videoState->audioStream->time_base;
         }
-      if ((ret = decoderStart (&videoState->auddec, audioThread, "audio_decoder", videoState)) < 0)
+      if ((ret = videoState->auddec.decoderStart (audioThread, "audio_decoder", videoState)) < 0)
         goto out;
 
       SDL_PauseAudioDevice (gAudioDevice, 0);
@@ -3104,7 +3104,7 @@ int streamComponentOpen (sVideoState* videoState, int stream_index) {
                               videoState->continueReadThread)) < 0)
         goto fail;
 
-      if ((ret = decoderStart (&videoState->viddec, videoThread, "video_decoder", videoState)) < 0)
+      if ((ret = videoState->viddec.decoderStart (videoThread, "video_decoder", videoState)) < 0)
         goto out;
 
       videoState->queue_attachments_req = 1;
@@ -3119,7 +3119,7 @@ int streamComponentOpen (sVideoState* videoState, int stream_index) {
       if ((ret = videoState->subdec.decoderInit (avctx, &videoState->subtitleq, videoState->continueReadThread)) < 0)
         goto fail;
 
-      if ((ret = decoderStart (&videoState->subdec, subtitleThread, "subtitle_decoder", videoState)) < 0)
+      if ((ret = videoState->subdec.decoderStart (subtitleThread, "subtitle_decoder", videoState)) < 0)
         goto out;
 
       break;
