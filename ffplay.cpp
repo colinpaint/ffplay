@@ -1432,6 +1432,21 @@ public:
     return delay;
     }
   //}}}
+  //{{{
+  double vp_duration (sFrame* vp, sFrame* nextvp) {
+
+    if (vp->serial == nextvp->serial) {
+      double duration = nextvp->pts - vp->pts;
+      if (isnan (duration) || duration <= 0 || duration > max_frame_duration)
+        return vp->duration;
+      else
+        return duration;
+      }
+    else {
+      return 0.0;
+      }
+    }
+  //}}}
 
   //{{{
   int configureVideoFilters (AVFilterGraph* graph, const char* filters, AVFrame* frame) {
@@ -1681,6 +1696,264 @@ public:
       }
 
     return got_picture;
+    }
+  //}}}
+
+  //{{{
+  void drawVideoAudioDisplay() {
+
+    int i, i_start, x, y1, y, ys, delay, n, nb_display_channels;
+    int ch, h, h2;
+
+    int rdft_bits;
+    for (rdft_bits = 1; (1 << rdft_bits) < 2 * height; rdft_bits++) ;
+    int nb_freq = 1 << (rdft_bits - 1);
+
+    /* compute display index : center on currently output samples */
+    int channels = audio_tgt.ch_layout.nb_channels;
+    nb_display_channels = channels;
+    if (!paused) {
+      int data_used = show_mode == SHOW_MODE_WAVES ? width : (2*nb_freq);
+      n = 2 * channels;
+      delay = audio_write_buf_size;
+      delay /= n;
+
+      /* to be more precise, we take into account the time spent since the last buffer computation */
+      int64_t time_diff = 0;
+      if (gAudioCallbackTime) {
+        time_diff = av_gettime_relative() - gAudioCallbackTime;
+        delay -= (int)(time_diff * audio_tgt.freq / 1000000);
+        }
+
+      delay += 2 * data_used;
+      if (delay < data_used)
+        delay = data_used;
+
+      i_start= x = computeMod  (sample_array_index - delay * channels, SAMPLE_ARRAY_SIZE);
+      if (show_mode == SHOW_MODE_WAVES) {
+        //{{{  precalc show_waves
+        h = INT_MIN;
+        for (i = 0; i < 1000; i += channels) {
+          int idx = (SAMPLE_ARRAY_SIZE + x - i) % SAMPLE_ARRAY_SIZE;
+          int a = sample_array[idx];
+          int b = sample_array[(idx + 4 * channels) % SAMPLE_ARRAY_SIZE];
+          int c = sample_array[(idx + 5 * channels) % SAMPLE_ARRAY_SIZE];
+          int d = sample_array[(idx + 9 * channels) % SAMPLE_ARRAY_SIZE];
+          int score = a - d;
+          if (h < score && (b ^ c) < 0) {
+            h = score;
+            i_start = idx;
+            }
+          }
+        }
+        //}}}
+
+      last_i_start = i_start;
+      }
+    else
+      i_start = last_i_start;
+
+    if (show_mode == SHOW_MODE_WAVES) {
+      //{{{  draw waves
+      SDL_SetRenderDrawColor (gRenderer, 255, 255, 255, 255);
+
+      // total height for one channel
+      h = height / nb_display_channels;
+
+      // precalc graph height / 2
+      h2 = (h * 9) / 20;
+      for (ch = 0; ch < nb_display_channels; ch++) {
+         i = i_start + ch;
+         // position of center line
+         y1 = ytop + ch * h + (h / 2);
+         for (x = 0; x < width; x++) {
+           y = (sample_array[i] * h2) >> 15;
+           if (y < 0) {
+             y = -y;
+             ys = y1 - y;
+             }
+           else {
+             ys = y1;
+             }
+           drawRectangle (xleft + x, ys, 1, y);
+           i += channels;
+           if (i >= SAMPLE_ARRAY_SIZE)
+             i -= SAMPLE_ARRAY_SIZE;
+           }
+         }
+
+       // draw
+       SDL_SetRenderDrawColor (gRenderer, 0, 0, 255, 255);
+       for (ch = 1; ch < nb_display_channels; ch++) {
+         y = ytop + ch * h;
+         drawRectangle (xleft, y, width, 1);
+         }
+       }
+      //}}}
+    else {
+      //{{{  draw rdft
+      int err = 0;
+      if (reallocTexture (&visTexture, SDL_PIXELFORMAT_ARGB8888,
+                           width, height, SDL_BLENDMODE_NONE, 1) < 0)
+        return;
+
+      if (xpos >= width)
+        xpos = 0;
+
+      nb_display_channels = FFMIN (nb_display_channels, 2);
+      if (rdft_bits != rdft_bits) {
+        const float rdft_scale = 1.0;
+        av_tx_uninit (&rdft);
+        av_freep (&real_data);
+        av_freep (&rdft_data);
+        rdft_bits = rdft_bits;
+        real_data = (float*)av_malloc_array (nb_freq, 4 *sizeof(*real_data));
+        rdft_data = (AVComplexFloat*)av_malloc_array (nb_freq + 1, 2 *sizeof(*rdft_data));
+        err = av_tx_init (&rdft, &rdft_fn, AV_TX_FLOAT_RDFT, 0, 1 << rdft_bits, &rdft_scale, 0);
+        }
+
+      if (err < 0 || !rdft_data) {
+        av_log (NULL, AV_LOG_ERROR, "Failed to allocate buffers for RDFT, switching to waves display\n");
+        show_mode = SHOW_MODE_WAVES;
+        }
+      else {
+        float* data_in[2];
+        AVComplexFloat* data[2];
+        SDL_Rect rect = {.x = xpos, .y = 0, .w = 1, .h = height};
+        for (ch = 0; ch < nb_display_channels; ch++) {
+          data_in[ch] = real_data + 2 * nb_freq * ch;
+          data[ch] = rdft_data + nb_freq * ch;
+          i = i_start + ch;
+          for (x = 0; x < 2 * nb_freq; x++) {
+            float w = (x-nb_freq) * (1.0f / nb_freq);
+            data_in[ch][x] = sample_array[i] * (1.0f - w * w);
+            i += channels;
+            if (i >= SAMPLE_ARRAY_SIZE)
+              i -= SAMPLE_ARRAY_SIZE;
+            }
+          rdft_fn (rdft, data[ch], data_in[ch], sizeof(float));
+          data[ch][0].im = data[ch][nb_freq].re;
+          data[ch][nb_freq].re = 0;
+          }
+
+        //{{{  draw rdft texture slowly, it is more than fast enough. */
+        uint32_t* pixels;
+        int pitch;
+        if (!SDL_LockTexture (visTexture, &rect, (void**)&pixels, &pitch)) {
+          pitch >>= 2;
+          pixels += pitch * height;
+          for (y = 0; y < height; y++) {
+            float w = 1.f / sqrtf ((float)nb_freq);
+            int a = (int)sqrtf (w * sqrtf (data[0][y].re * data[0][y].re + data[0][y].im * data[0][y].im));
+            int b = (nb_display_channels == 2) ? (int)(sqrt (w * hypot(data[1][y].re, data[1][y].im))) : a;
+            a = FFMIN(a, 255);
+            b = FFMIN(b, 255);
+            pixels -= pitch;
+            *pixels = (a << 16) + (b << 8) + ((a+b) >> 1);
+            }
+          SDL_UnlockTexture (visTexture);
+          }
+        //}}}
+        SDL_RenderCopy (gRenderer, visTexture, NULL, NULL);
+        }
+
+      if (!paused)
+        xpos++;
+      }
+      //}}}
+    }
+  //}}}
+  //{{{
+  void drawVideoDisplay() {
+
+    sFrame* vp = frame_queue_peek_last (&pictq);
+    sFrame* sp = NULL;
+    if (subtitleStream) {
+      //{{{  subtitle
+      if (frame_queue_nb_remaining (&subpq) > 0) {
+        sp = frame_queue_peek (&subpq);
+        if (vp->pts >= sp->pts + ((float) sp->sub.start_display_time / 1000)) {
+          if (!sp->uploaded) {
+            uint8_t* pixels[4];
+            int pitch[4];
+            if (!sp->width || !sp->height) {
+              sp->width = vp->width;
+              sp->height = vp->height;
+              }
+            if (reallocTexture (&subTexture, SDL_PIXELFORMAT_ARGB8888,
+                                 sp->width, sp->height, SDL_BLENDMODE_BLEND, 1) < 0)
+              return;
+
+            for (int i = 0; i < (int)sp->sub.num_rects; i++) {
+              AVSubtitleRect* sub_rect = sp->sub.rects[i];
+
+              sub_rect->x = av_clip (sub_rect->x, 0, sp->width );
+              sub_rect->y = av_clip (sub_rect->y, 0, sp->height);
+              sub_rect->w = av_clip (sub_rect->w, 0, sp->width  - sub_rect->x);
+              sub_rect->h = av_clip (sub_rect->h, 0, sp->height - sub_rect->y);
+
+              sub_convert_ctx = sws_getCachedContext (sub_convert_ctx,
+                                                          sub_rect->w, sub_rect->h, AV_PIX_FMT_PAL8,
+                                                          sub_rect->w, sub_rect->h, AV_PIX_FMT_BGRA,
+                                                          0, NULL, NULL, NULL);
+              if (!sub_convert_ctx) {
+                //{{{  error return
+                av_log (NULL, AV_LOG_FATAL, "Cannot initialize the conversion context\n");
+                return;
+                }
+                //}}}
+
+              if (!SDL_LockTexture(subTexture, (SDL_Rect *)sub_rect, (void **)pixels, pitch)) {
+                sws_scale (sub_convert_ctx, (const uint8_t * const *)sub_rect->data, sub_rect->linesize,
+                           0, sub_rect->h, pixels, pitch);
+                SDL_UnlockTexture (subTexture);
+                }
+              }
+              sp->uploaded = 1;
+            }
+          }
+        else
+          sp = NULL;
+        }
+      }
+      //}}}
+
+    SDL_Rect rect;
+    calculateDisplayRect (&rect, xleft, ytop, width, height, vp->width, vp->height, vp->sar);
+    setSdlYuvConversionMode (vp->frame);
+
+    if (!vp->uploaded) {
+      if (uploadTexture (&vidTexture, vp->frame) < 0) {
+        setSdlYuvConversionMode (NULL);
+        return;
+        }
+      vp->uploaded = 1;
+      vp->flip_v = vp->frame->linesize[0] < 0;
+      }
+
+    SDL_RenderCopyEx (gRenderer, vidTexture, NULL, &rect, 0, NULL, vp->flip_v ? SDL_FLIP_VERTICAL : (SDL_RendererFlip)0);
+    setSdlYuvConversionMode (NULL);
+
+    if (sp)
+      SDL_RenderCopy (gRenderer, subTexture, NULL, &rect);
+    }
+  //}}}
+  //{{{
+  void videoDisplay() {
+  // display the current picture, if any
+
+    if (!width)
+      videoOpen();
+
+    SDL_SetRenderDrawColor (gRenderer, 0, 0, 0, 255);
+    SDL_RenderClear (gRenderer);
+
+    if (audioStream && (show_mode != SHOW_MODE_VIDEO))
+      drawVideoAudioDisplay();
+    else if (videoStream)
+      drawVideoDisplay();
+
+    SDL_RenderPresent (gRenderer);
     }
   //}}}
 
@@ -1951,6 +2224,8 @@ public:
     }
   //}}}
 
+
+public:
   SDL_Thread* read_tid;
   const AVInputFormat* iformat;
   SDL_cond* continueReadThread;
@@ -2061,278 +2336,6 @@ public:
   };
 //}}}
 //{{{
-void drawVideoAudioDisplay (sVideoState* videoState) {
-
-  int i, i_start, x, y1, y, ys, delay, n, nb_display_channels;
-  int ch, h, h2;
-
-  int rdft_bits;
-  for (rdft_bits = 1; (1 << rdft_bits) < 2 * videoState->height; rdft_bits++) ;
-  int nb_freq = 1 << (rdft_bits - 1);
-
-  /* compute display index : center on currently output samples */
-  int channels = videoState->audio_tgt.ch_layout.nb_channels;
-  nb_display_channels = channels;
-  if (!videoState->paused) {
-    int data_used = videoState->show_mode == SHOW_MODE_WAVES ? videoState->width : (2*nb_freq);
-    n = 2 * channels;
-    delay = videoState->audio_write_buf_size;
-    delay /= n;
-
-    /* to be more precise, we take into account the time spent since the last buffer computation */
-    int64_t time_diff = 0;
-    if (gAudioCallbackTime) {
-      time_diff = av_gettime_relative() - gAudioCallbackTime;
-      delay -= (int)(time_diff * videoState->audio_tgt.freq / 1000000);
-      }
-
-    delay += 2 * data_used;
-    if (delay < data_used)
-      delay = data_used;
-
-    i_start= x = computeMod  (videoState->sample_array_index - delay * channels, SAMPLE_ARRAY_SIZE);
-    if (videoState->show_mode == SHOW_MODE_WAVES) {
-      //{{{  precalc show_waves
-      h = INT_MIN;
-      for (i = 0; i < 1000; i += channels) {
-        int idx = (SAMPLE_ARRAY_SIZE + x - i) % SAMPLE_ARRAY_SIZE;
-        int a = videoState->sample_array[idx];
-        int b = videoState->sample_array[(idx + 4 * channels) % SAMPLE_ARRAY_SIZE];
-        int c = videoState->sample_array[(idx + 5 * channels) % SAMPLE_ARRAY_SIZE];
-        int d = videoState->sample_array[(idx + 9 * channels) % SAMPLE_ARRAY_SIZE];
-        int score = a - d;
-        if (h < score && (b ^ c) < 0) {
-          h = score;
-          i_start = idx;
-          }
-        }
-      }
-      //}}}
-
-    videoState->last_i_start = i_start;
-    }
-  else
-    i_start = videoState->last_i_start;
-
-  if (videoState->show_mode == SHOW_MODE_WAVES) {
-    //{{{  draw waves
-    SDL_SetRenderDrawColor (gRenderer, 255, 255, 255, 255);
-
-    // total height for one channel
-    h = videoState->height / nb_display_channels;
-
-    // precalc graph height / 2
-    h2 = (h * 9) / 20;
-    for (ch = 0; ch < nb_display_channels; ch++) {
-       i = i_start + ch;
-       // position of center line
-       y1 = videoState->ytop + ch * h + (h / 2);
-       for (x = 0; x < videoState->width; x++) {
-         y = (videoState->sample_array[i] * h2) >> 15;
-         if (y < 0) {
-           y = -y;
-           ys = y1 - y;
-           }
-         else {
-           ys = y1;
-           }
-         drawRectangle (videoState->xleft + x, ys, 1, y);
-         i += channels;
-         if (i >= SAMPLE_ARRAY_SIZE)
-           i -= SAMPLE_ARRAY_SIZE;
-         }
-       }
-
-     // draw
-     SDL_SetRenderDrawColor (gRenderer, 0, 0, 255, 255);
-     for (ch = 1; ch < nb_display_channels; ch++) {
-       y = videoState->ytop + ch * h;
-       drawRectangle (videoState->xleft, y, videoState->width, 1);
-       }
-     }
-    //}}}
-  else {
-    //{{{  draw rdft
-    int err = 0;
-    if (reallocTexture (&videoState->visTexture, SDL_PIXELFORMAT_ARGB8888,
-                         videoState->width, videoState->height, SDL_BLENDMODE_NONE, 1) < 0)
-      return;
-
-    if (videoState->xpos >= videoState->width)
-      videoState->xpos = 0;
-
-    nb_display_channels = FFMIN (nb_display_channels, 2);
-    if (rdft_bits != videoState->rdft_bits) {
-      const float rdft_scale = 1.0;
-      av_tx_uninit (&videoState->rdft);
-      av_freep (&videoState->real_data);
-      av_freep (&videoState->rdft_data);
-      videoState->rdft_bits = rdft_bits;
-      videoState->real_data = (float*)av_malloc_array (nb_freq, 4 *sizeof(*videoState->real_data));
-      videoState->rdft_data = (AVComplexFloat*)av_malloc_array (nb_freq + 1, 2 *sizeof(*videoState->rdft_data));
-      err = av_tx_init (&videoState->rdft, &videoState->rdft_fn, AV_TX_FLOAT_RDFT, 0, 1 << rdft_bits, &rdft_scale, 0);
-      }
-
-    if (err < 0 || !videoState->rdft_data) {
-      av_log (NULL, AV_LOG_ERROR, "Failed to allocate buffers for RDFT, switching to waves display\n");
-      videoState->show_mode = SHOW_MODE_WAVES;
-      }
-    else {
-      float* data_in[2];
-      AVComplexFloat* data[2];
-      SDL_Rect rect = {.x = videoState->xpos, .y = 0, .w = 1, .h = videoState->height};
-      for (ch = 0; ch < nb_display_channels; ch++) {
-        data_in[ch] = videoState->real_data + 2 * nb_freq * ch;
-        data[ch] = videoState->rdft_data + nb_freq * ch;
-        i = i_start + ch;
-        for (x = 0; x < 2 * nb_freq; x++) {
-          float w = (x-nb_freq) * (1.0f / nb_freq);
-          data_in[ch][x] = videoState->sample_array[i] * (1.0f - w * w);
-          i += channels;
-          if (i >= SAMPLE_ARRAY_SIZE)
-            i -= SAMPLE_ARRAY_SIZE;
-          }
-        videoState->rdft_fn (videoState->rdft, data[ch], data_in[ch], sizeof(float));
-        data[ch][0].im = data[ch][nb_freq].re;
-        data[ch][nb_freq].re = 0;
-        }
-
-      //{{{  draw rdft texture slowly, it is more than fast enough. */
-      uint32_t* pixels;
-      int pitch;
-      if (!SDL_LockTexture (videoState->visTexture, &rect, (void**)&pixels, &pitch)) {
-        pitch >>= 2;
-        pixels += pitch * videoState->height;
-        for (y = 0; y < videoState->height; y++) {
-          float w = 1.f / sqrtf ((float)nb_freq);
-          int a = (int)sqrtf (w * sqrtf (data[0][y].re * data[0][y].re + data[0][y].im * data[0][y].im));
-          int b = (nb_display_channels == 2) ? (int)(sqrt (w * hypot(data[1][y].re, data[1][y].im))) : a;
-          a = FFMIN(a, 255);
-          b = FFMIN(b, 255);
-          pixels -= pitch;
-          *pixels = (a << 16) + (b << 8) + ((a+b) >> 1);
-          }
-        SDL_UnlockTexture (videoState->visTexture);
-        }
-      //}}}
-      SDL_RenderCopy (gRenderer, videoState->visTexture, NULL, NULL);
-      }
-
-    if (!videoState->paused)
-      videoState->xpos++;
-    }
-    //}}}
-  }
-//}}}
-//{{{
-void drawVideoDisplay (sVideoState* videoState) {
-
-  sFrame* vp = frame_queue_peek_last (&videoState->pictq);
-  sFrame* sp = NULL;
-  if (videoState->subtitleStream) {
-    //{{{  subtitle
-    if (frame_queue_nb_remaining (&videoState->subpq) > 0) {
-      sp = frame_queue_peek (&videoState->subpq);
-      if (vp->pts >= sp->pts + ((float) sp->sub.start_display_time / 1000)) {
-        if (!sp->uploaded) {
-          uint8_t* pixels[4];
-          int pitch[4];
-          if (!sp->width || !sp->height) {
-            sp->width = vp->width;
-            sp->height = vp->height;
-            }
-          if (reallocTexture (&videoState->subTexture, SDL_PIXELFORMAT_ARGB8888,
-                               sp->width, sp->height, SDL_BLENDMODE_BLEND, 1) < 0)
-            return;
-
-          for (int i = 0; i < (int)sp->sub.num_rects; i++) {
-            AVSubtitleRect* sub_rect = sp->sub.rects[i];
-
-            sub_rect->x = av_clip (sub_rect->x, 0, sp->width );
-            sub_rect->y = av_clip (sub_rect->y, 0, sp->height);
-            sub_rect->w = av_clip (sub_rect->w, 0, sp->width  - sub_rect->x);
-            sub_rect->h = av_clip (sub_rect->h, 0, sp->height - sub_rect->y);
-
-            videoState->sub_convert_ctx = sws_getCachedContext (videoState->sub_convert_ctx,
-                                                        sub_rect->w, sub_rect->h, AV_PIX_FMT_PAL8,
-                                                        sub_rect->w, sub_rect->h, AV_PIX_FMT_BGRA,
-                                                        0, NULL, NULL, NULL);
-            if (!videoState->sub_convert_ctx) {
-              //{{{  error return
-              av_log (NULL, AV_LOG_FATAL, "Cannot initialize the conversion context\n");
-              return;
-              }
-              //}}}
-
-            if (!SDL_LockTexture(videoState->subTexture, (SDL_Rect *)sub_rect, (void **)pixels, pitch)) {
-              sws_scale (videoState->sub_convert_ctx, (const uint8_t * const *)sub_rect->data, sub_rect->linesize,
-                         0, sub_rect->h, pixels, pitch);
-              SDL_UnlockTexture (videoState->subTexture);
-              }
-            }
-            sp->uploaded = 1;
-          }
-        }
-      else
-        sp = NULL;
-      }
-    }
-    //}}}
-
-  SDL_Rect rect;
-  calculateDisplayRect (&rect, videoState->xleft, videoState->ytop, videoState->width, videoState->height, vp->width, vp->height, vp->sar);
-  setSdlYuvConversionMode (vp->frame);
-
-  if (!vp->uploaded) {
-    if (uploadTexture (&videoState->vidTexture, vp->frame) < 0) {
-      setSdlYuvConversionMode (NULL);
-      return;
-      }
-    vp->uploaded = 1;
-    vp->flip_v = vp->frame->linesize[0] < 0;
-    }
-
-  SDL_RenderCopyEx (gRenderer, videoState->vidTexture, NULL, &rect, 0, NULL, vp->flip_v ? SDL_FLIP_VERTICAL : (SDL_RendererFlip)0);
-  setSdlYuvConversionMode (NULL);
-
-  if (sp)
-    SDL_RenderCopy (gRenderer, videoState->subTexture, NULL, &rect);
-  }
-//}}}
-//{{{
-void videoDisplay (sVideoState* videoState) {
-// display the current picture, if any
-
-  if (!videoState->width)
-    videoState->videoOpen();
-
-  SDL_SetRenderDrawColor (gRenderer, 0, 0, 0, 255);
-  SDL_RenderClear (gRenderer);
-
-  if (videoState->audioStream && (videoState->show_mode != SHOW_MODE_VIDEO))
-    drawVideoAudioDisplay (videoState);
-  else if (videoState->videoStream)
-    drawVideoDisplay (videoState);
-
-  SDL_RenderPresent (gRenderer);
-  }
-//}}}
-//{{{
-double vp_duration (sVideoState* videoState, sFrame* vp, sFrame* nextvp) {
-
-  if (vp->serial == nextvp->serial) {
-    double duration = nextvp->pts - vp->pts;
-    if (isnan (duration) || duration <= 0 || duration > videoState->max_frame_duration)
-      return vp->duration;
-    else
-      return duration;
-    }
-  else {
-    return 0.0;
-    }
-  }
-//}}}
-//{{{
 void update_video_pts (sVideoState* videoState, double pts, int serial) {
 
   /* update current video pts */
@@ -2399,7 +2402,7 @@ void videoRefresh (sVideoState* videoState, double* remaining_time) {
   if (!gDisplayDisable && videoState->show_mode != SHOW_MODE_VIDEO && videoState->audioStream) {
     time = av_gettime_relative() / 1000000.0;
     if (videoState->force_refresh || videoState->last_vis_time + rdftspeed < time) {
-      videoDisplay (videoState);
+      videoState->videoDisplay();
       videoState->last_vis_time = time;
       }
     *remaining_time = FFMIN(*remaining_time, videoState->last_vis_time + rdftspeed - time);
@@ -2426,7 +2429,7 @@ retry:
         goto display;
 
       // compute nominal last_duration
-      double last_duration = vp_duration (videoState, lastvp, vp);
+      double last_duration = videoState->vp_duration (lastvp, vp);
       double delay = videoState->compute_target_delay (last_duration);
 
       time = av_gettime_relative() / 1000000.0;
@@ -2446,7 +2449,7 @@ retry:
 
       if (frame_queue_nb_remaining (&videoState->pictq) > 1) {
         sFrame* nextvp = frame_queue_peek_next (&videoState->pictq);
-        double duration = vp_duration (videoState, vp, nextvp);
+        double duration = videoState->vp_duration (vp, nextvp);
         if (!videoState->step && (framedrop>0 || (framedrop && videoState->get_master_sync_type () != AV_SYNC_VIDEO_MASTER))
             && time > videoState->frame_timer + duration) {
           videoState->frame_drops_late++;
@@ -2500,8 +2503,8 @@ retry:
     if (!gDisplayDisable &&
         videoState->force_refresh &&
         videoState->show_mode == SHOW_MODE_VIDEO && videoState->pictq.rindex_shown)
-      videoDisplay (videoState);
-    }
+      videoState->videoDisplay();
+      }
 
   videoState->force_refresh = 0;
   if (show_status) {
