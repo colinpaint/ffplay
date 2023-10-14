@@ -1009,6 +1009,117 @@ public:
     }
   //}}}
   //{{{
+  int decodeFrame (AVFrame* frame, AVSubtitle* sub) {
+
+    int ret = AVERROR(EAGAIN);
+
+    for (;;) {
+      if (queue->serial == pkt_serial) {
+        do {
+          if (queue->abort_request)
+            return -1;
+
+          switch (avctx->codec_type) {
+            //{{{
+            case AVMEDIA_TYPE_VIDEO:
+              ret = avcodec_receive_frame(avctx, frame);
+              if (ret >= 0) {
+                if (decoder_reorder_pts == -1)
+                  frame->pts = frame->best_effort_timestamp;
+                else if (!decoder_reorder_pts)
+                  frame->pts = frame->pkt_dts;
+                }
+              break;
+            //}}}
+            //{{{
+            case AVMEDIA_TYPE_AUDIO:
+              ret = avcodec_receive_frame (avctx, frame);
+              if (ret >= 0) {
+                AVRational tb = {1, frame->sample_rate};
+                if (frame->pts != AV_NOPTS_VALUE)
+                  frame->pts = av_rescale_q (frame->pts, avctx->pkt_timebase, tb);
+                else if (next_pts != AV_NOPTS_VALUE)
+                  frame->pts = av_rescale_q (next_pts, next_pts_tb, tb);
+
+                if (frame->pts != AV_NOPTS_VALUE) {
+                  next_pts = frame->pts + frame->nb_samples;
+                  next_pts_tb = tb;
+                  }
+                }
+              break;
+            //}}}
+            }
+          if (ret == AVERROR_EOF) {
+            //{{{  end of file, return
+            finished = pkt_serial;
+            avcodec_flush_buffers (avctx);
+            return 0;
+            }
+            //}}}
+          if (ret >= 0)
+            return 1;
+          } while (ret != AVERROR(EAGAIN));
+        }
+
+      do {
+        if (queue->nb_packets == 0)
+          SDL_CondSignal (empty_queue_cond);
+        if (packet_pending)
+          packet_pending = 0;
+        else {
+          int old_serial = pkt_serial;
+          if (queue->packet_queue_get (pkt, 1, &pkt_serial) < 0)
+            return -1;
+          if (old_serial != pkt_serial) {
+            avcodec_flush_buffers (avctx);
+            finished = 0;
+            next_pts = start_pts;
+            next_pts_tb = start_pts_tb;
+            }
+          }
+        if (queue->serial == pkt_serial)
+          break;
+
+        av_packet_unref (pkt);
+        } while (1);
+
+      if (avctx->codec_type == AVMEDIA_TYPE_SUBTITLE) {
+        //{{{  subtitle
+        int gotFrame = 0;
+        ret = avcodec_decode_subtitle2 (avctx, sub, &gotFrame, pkt);
+        if (ret < 0)
+          ret = AVERROR(EAGAIN);
+        else {
+          if (gotFrame && !pkt->data)
+            packet_pending = 1;
+          ret = gotFrame ? 0 : (pkt->data ? AVERROR(EAGAIN) : AVERROR_EOF);
+          }
+        av_packet_unref (pkt);
+        }
+        //}}}
+      else {
+        //{{{  audio, video
+        if (pkt->buf && !pkt->opaque_ref) {
+          sFrameData* fd;
+          pkt->opaque_ref = av_buffer_allocz (sizeof(*fd));
+          if (!pkt->opaque_ref)
+            return AVERROR(ENOMEM);
+          fd = (sFrameData*)pkt->opaque_ref->data;
+          fd->pkt_pos = pkt->pos;
+          }
+
+        if (avcodec_send_packet (avctx, pkt) == AVERROR(EAGAIN)) {
+          av_log (avctx, AV_LOG_ERROR, "Receive_frame and send_packet both returned EAGAIN, which is an API violation.\n");
+          packet_pending = 1;
+          }
+        else
+          av_packet_unref (pkt);
+        }
+        //}}}
+      }
+    }
+  //}}}
+  //{{{
   void decoderAbort (sFrameQueue* frameQueue) {
 
     queue->packet_queue_abort();
@@ -1045,118 +1156,6 @@ public:
 
   SDL_Thread* decoder_tid;
   };
-//}}}
-
-//{{{
-int decodeFrame (sDecoder* decoder, AVFrame* frame, AVSubtitle* sub) {
-
-  int ret = AVERROR(EAGAIN);
-
-  for (;;) {
-    if (decoder->queue->serial == decoder->pkt_serial) {
-      do {
-        if (decoder->queue->abort_request)
-          return -1;
-
-        switch (decoder->avctx->codec_type) {
-          //{{{
-          case AVMEDIA_TYPE_VIDEO:
-            ret = avcodec_receive_frame(decoder->avctx, frame);
-            if (ret >= 0) {
-              if (decoder_reorder_pts == -1)
-                frame->pts = frame->best_effort_timestamp;
-              else if (!decoder_reorder_pts)
-                frame->pts = frame->pkt_dts;
-              }
-            break;
-          //}}}
-          //{{{
-          case AVMEDIA_TYPE_AUDIO:
-            ret = avcodec_receive_frame (decoder->avctx, frame);
-            if (ret >= 0) {
-              AVRational tb = {1, frame->sample_rate};
-              if (frame->pts != AV_NOPTS_VALUE)
-                frame->pts = av_rescale_q (frame->pts, decoder->avctx->pkt_timebase, tb);
-              else if (decoder->next_pts != AV_NOPTS_VALUE)
-                frame->pts = av_rescale_q (decoder->next_pts, decoder->next_pts_tb, tb);
-
-              if (frame->pts != AV_NOPTS_VALUE) {
-                decoder->next_pts = frame->pts + frame->nb_samples;
-                decoder->next_pts_tb = tb;
-                }
-              }
-            break;
-          //}}}
-          }
-        if (ret == AVERROR_EOF) {
-          //{{{  end of file, return
-          decoder->finished = decoder->pkt_serial;
-          avcodec_flush_buffers (decoder->avctx);
-          return 0;
-          }
-          //}}}
-        if (ret >= 0)
-          return 1;
-        } while (ret != AVERROR(EAGAIN));
-      }
-
-    do {
-      if (decoder->queue->nb_packets == 0)
-        SDL_CondSignal (decoder->empty_queue_cond);
-      if (decoder->packet_pending)
-        decoder->packet_pending = 0;
-      else {
-        int old_serial = decoder->pkt_serial;
-        if (decoder->queue->packet_queue_get (decoder->pkt, 1, &decoder->pkt_serial) < 0)
-          return -1;
-        if (old_serial != decoder->pkt_serial) {
-          avcodec_flush_buffers (decoder->avctx);
-          decoder->finished = 0;
-          decoder->next_pts = decoder->start_pts;
-          decoder->next_pts_tb = decoder->start_pts_tb;
-          }
-        }
-      if (decoder->queue->serial == decoder->pkt_serial)
-        break;
-
-      av_packet_unref (decoder->pkt);
-      } while (1);
-
-    if (decoder->avctx->codec_type == AVMEDIA_TYPE_SUBTITLE) {
-      //{{{  subtitle
-      int gotFrame = 0;
-      ret = avcodec_decode_subtitle2 (decoder->avctx, sub, &gotFrame, decoder->pkt);
-      if (ret < 0)
-        ret = AVERROR(EAGAIN);
-      else {
-        if (gotFrame && !decoder->pkt->data)
-          decoder->packet_pending = 1;
-        ret = gotFrame ? 0 : (decoder->pkt->data ? AVERROR(EAGAIN) : AVERROR_EOF);
-        }
-      av_packet_unref (decoder->pkt);
-      }
-      //}}}
-    else {
-      //{{{  audio, video
-      if (decoder->pkt->buf && !decoder->pkt->opaque_ref) {
-        sFrameData* fd;
-        decoder->pkt->opaque_ref = av_buffer_allocz (sizeof(*fd));
-        if (!decoder->pkt->opaque_ref)
-          return AVERROR(ENOMEM);
-        fd = (sFrameData*)decoder->pkt->opaque_ref->data;
-        fd->pkt_pos = decoder->pkt->pos;
-        }
-
-      if (avcodec_send_packet (decoder->avctx, decoder->pkt) == AVERROR(EAGAIN)) {
-        av_log (decoder->avctx, AV_LOG_ERROR, "Receive_frame and send_packet both returned EAGAIN, which is an API violation.\n");
-        decoder->packet_pending = 1;
-        }
-      else
-        av_packet_unref (decoder->pkt);
-      }
-      //}}}
-    }
-  }
 //}}}
 //{{{
 class sVideoState {
@@ -1533,7 +1532,7 @@ public:
   int getVideoFrame (AVFrame* frame) {
 
     int got_picture;
-    if ((got_picture = decodeFrame (&viddec, frame, NULL)) < 0)
+    if ((got_picture = viddec.decodeFrame (frame, NULL)) < 0)
       return -1;
 
     if (got_picture) {
@@ -2829,7 +2828,7 @@ int audioThread (void* arg) {
   int ret = 0;
   do {
     int gotFrame;
-    if ((gotFrame = decodeFrame (&videoState->auddec, frame, NULL)) < 0)
+    if ((gotFrame = videoState->auddec.decodeFrame (frame, NULL)) < 0)
       goto the_end;
 
     int last_serial = -1;
@@ -2918,7 +2917,7 @@ int subtitleThread (void* arg) {
 
     //int gotSubtitle = = decodeFrame (&videoState->subdec, NULL, &subtitleFrame->sub)) < 0;
     int gotSubtitle;
-    if ((gotSubtitle = decodeFrame (&videoState->subdec, NULL, &subtitleFrame->sub)) < 0)
+    if ((gotSubtitle = videoState->subdec.decodeFrame (NULL, &subtitleFrame->sub)) < 0)
       break;
 
     double pts = 0;
