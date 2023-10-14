@@ -840,6 +840,121 @@ public:
     return 0;
     }
   //}}}
+  //{{{
+  void frame_queue_destroy() {
+
+    for (int i = 0; i < maxSize; i++) {
+      sFrame* frame = &queue[i];
+    frame->  frame_queue_unref_item();
+      av_frame_free (&frame->frame);
+      }
+
+    SDL_DestroyMutex (mutex);
+    SDL_DestroyCond (cond);
+    }
+  //}}}
+  //{{{
+  void frame_queue_signal() {
+
+    SDL_LockMutex (mutex);
+    SDL_CondSignal (cond);
+    SDL_UnlockMutex (mutex);
+    }
+  //}}}
+  //{{{
+  sFrame* frame_queue_peek() {
+    return &queue[(rindex + rindexShown) % maxSize];
+    }
+  //}}}
+  //{{{
+  sFrame* frame_queue_peek_next() {
+    return &queue[(rindex + rindexShown + 1) % maxSize];
+     }
+  //}}}
+  //{{{
+  sFrame* frame_queue_peek_last() {
+    return &queue[rindex];
+    }
+  //}}}
+  //{{{
+  sFrame* frame_queue_peek_writable () {
+
+    /* wait until we have space to put a new frame */
+    SDL_LockMutex (mutex);
+
+    while (size >= maxSize && !packetQueue->abort_request) {
+      SDL_CondWait (cond, mutex);
+      }
+     SDL_UnlockMutex (mutex);
+
+    if (packetQueue->abort_request)
+      return NULL;
+
+    return &queue[windex];
+    }
+  //}}}
+  //{{{
+  sFrame* frame_queue_peek_readable () {
+
+    /* wait until we have a readable a new frame */
+    SDL_LockMutex (mutex);
+    while (size - rindexShown <= 0 && !packetQueue->abort_request)
+      SDL_CondWait (cond, mutex);
+     SDL_UnlockMutex (mutex);
+
+    if (packetQueue->abort_request)
+      return NULL;
+
+    return &queue[(rindex + rindexShown) % maxSize];
+    }
+  //}}}
+  //{{{
+  void frame_queue_push () {
+
+    if (++windex == maxSize)
+      windex = 0;
+
+    SDL_LockMutex (mutex);
+    size++;
+    SDL_CondSignal (cond);
+    SDL_UnlockMutex (mutex);
+    }
+  //}}}
+  //{{{
+  void frame_queue_next () {
+
+    if (keepLast && !rindexShown) {
+      rindexShown = 1;
+      return;
+      }
+
+    queue[rindex].frame_queue_unref_item();
+    if (++rindex == maxSize)
+      rindex = 0;
+
+    SDL_LockMutex (mutex);
+    size--;
+    SDL_CondSignal (cond);
+    SDL_UnlockMutex (mutex);
+    }
+  //}}}
+  //{{{
+  /* return the number of undisplayed frames in the queue */
+  int frame_queue_nb_remaining () {
+    return size - rindexShown;
+    }
+  //}}}
+  //{{{
+  /* return last shown position */
+  int64_t frame_queue_last_pos () {
+
+    sFrame* fp = &queue[rindex];
+    if (rindexShown && fp->serial == packetQueue->serial)
+      return fp->pos;
+    else
+      return -1;
+    }
+  //}}}
 
   sFrame queue[FRAME_QUEUE_SIZE];
 
@@ -856,122 +971,6 @@ public:
 
   sPacketQueue* packetQueue;
   };
-
-//{{{
-void frame_queue_destroy (sFrameQueue* frameQueue) {
-
-  for (int i = 0; i < frameQueue->maxSize; i++) {
-    sFrame* frame = &frameQueue->queue[i];
-  frame->  frame_queue_unref_item();
-    av_frame_free (&frame->frame);
-    }
-
-  SDL_DestroyMutex (frameQueue->mutex);
-  SDL_DestroyCond (frameQueue->cond);
-  }
-//}}}
-//{{{
-void frame_queue_signal (sFrameQueue* frameQueue) {
-
-  SDL_LockMutex (frameQueue->mutex);
-  SDL_CondSignal (frameQueue->cond);
-  SDL_UnlockMutex (frameQueue->mutex);
-  }
-//}}}
-//{{{
-sFrame* frame_queue_peek (sFrameQueue* frameQueue) {
-  return &frameQueue->queue[(frameQueue->rindex + frameQueue->rindexShown) % frameQueue->maxSize];
-  }
-//}}}
-//{{{
-sFrame* frame_queue_peek_next (sFrameQueue* frameQueue) {
-  return &frameQueue->queue[(frameQueue->rindex + frameQueue->rindexShown + 1) % frameQueue->maxSize];
-   }
-//}}}
-//{{{
-sFrame* frame_queue_peek_last (sFrameQueue* frameQueue) {
-  return &frameQueue->queue[frameQueue->rindex];
-  }
-//}}}
-//{{{
-sFrame* frame_queue_peek_writable (sFrameQueue* frameQueue) {
-
-  /* wait until we have space to put a new frame */
-  SDL_LockMutex (frameQueue->mutex);
-
-  while (frameQueue->size >= frameQueue->maxSize && !frameQueue->packetQueue->abort_request) {
-    SDL_CondWait (frameQueue->cond, frameQueue->mutex);
-    }
-   SDL_UnlockMutex (frameQueue->mutex);
-
-  if (frameQueue->packetQueue->abort_request)
-    return NULL;
-
-  return &frameQueue->queue[frameQueue->windex];
-  }
-//}}}
-//{{{
-sFrame* frame_queue_peek_readable (sFrameQueue* frameQueue) {
-
-  /* wait until we have a readable a new frame */
-  SDL_LockMutex (frameQueue->mutex);
-  while (frameQueue->size - frameQueue->rindexShown <= 0 && !frameQueue->packetQueue->abort_request)
-    SDL_CondWait (frameQueue->cond, frameQueue->mutex);
-   SDL_UnlockMutex (frameQueue->mutex);
-
-  if (frameQueue->packetQueue->abort_request)
-    return NULL;
-
-  return &frameQueue->queue[(frameQueue->rindex + frameQueue->rindexShown) % frameQueue->maxSize];
-  }
-//}}}
-//{{{
-void frame_queue_push (sFrameQueue* frameQueue) {
-
-  if (++frameQueue->windex == frameQueue->maxSize)
-    frameQueue->windex = 0;
-
-  SDL_LockMutex (frameQueue->mutex);
-  frameQueue->size++;
-  SDL_CondSignal (frameQueue->cond);
-  SDL_UnlockMutex (frameQueue->mutex);
-  }
-//}}}
-//{{{
-void frame_queue_next (sFrameQueue* frameQueue) {
-
-  if (frameQueue->keepLast && !frameQueue->rindexShown) {
-    frameQueue->rindexShown = 1;
-    return;
-    }
-
-  frameQueue->queue[frameQueue->rindex].frame_queue_unref_item();
-  if (++frameQueue->rindex == frameQueue->maxSize)
-    frameQueue->rindex = 0;
-
-  SDL_LockMutex (frameQueue->mutex);
-  frameQueue->size--;
-  SDL_CondSignal (frameQueue->cond);
-  SDL_UnlockMutex (frameQueue->mutex);
-  }
-//}}}
-//{{{
-/* return the number of undisplayed frames in the queue */
-int frame_queue_nb_remaining (sFrameQueue* frameQueue) {
-  return frameQueue->size - frameQueue->rindexShown;
-  }
-//}}}
-//{{{
-/* return last shown position */
-int64_t frame_queue_last_pos (sFrameQueue* frameQueue) {
-
-  sFrame* fp = &frameQueue->queue[frameQueue->rindex];
-  if (frameQueue->rindexShown && fp->serial == frameQueue->packetQueue->serial)
-    return fp->pos;
-  else
-    return -1;
-  }
-//}}}
 //}}}
 //{{{
 class sDecoder {
@@ -1124,7 +1123,7 @@ public:
   void decoderAbort (sFrameQueue* frameQueue) {
 
     queue->packet_queue_abort();
-    frame_queue_signal (frameQueue);
+    frameQueue->frame_queue_signal ();
     SDL_WaitThread (decoder_tid, NULL);
 
     decoder_tid = NULL;
@@ -1661,18 +1660,17 @@ public:
     sFrame* audioFrame;
     do {
       #if defined(_WIN32)
-        while (frame_queue_nb_remaining (&sampq) == 0) {
+        while (sampq.frame_queue_nb_remaining () == 0) {
           if ((av_gettime_relative() - gAudioCallbackTime) >
                1000000LL * audio_hw_buf_size / audio_tgt.bytes_per_sec / 2)
             return -1;
           av_usleep (1000);
           }
       #endif
-        if (!(audioFrame = frame_queue_peek_readable (&sampq)))
+        if (!(audioFrame = sampq.frame_queue_peek_readable ()))
           return -1;
-        frame_queue_next (&sampq);
+        sampq.frame_queue_next ();
       } while (audioFrame->serial != audioq.serial);
-
     int data_size = av_samples_get_buffer_size (NULL, audioFrame->frame->ch_layout.nb_channels,
                                                 audioFrame->frame->nb_samples,
                                                 (AVSampleFormat)(audioFrame->frame->format), 1);
@@ -1878,7 +1876,7 @@ public:
     #endif
 
     sFrame* vp;
-    if (!(vp = frame_queue_peek_writable (&pictq)))
+    if (!(vp = pictq.frame_queue_peek_writable ()))
       return -1;
 
     vp->sar = src_frame->sample_aspect_ratio;
@@ -1896,7 +1894,7 @@ public:
     set_default_window_size (vp->width, vp->height, vp->sar);
 
     av_frame_move_ref (vp->frame, src_frame);
-    frame_queue_push (&pictq);
+    pictq.frame_queue_push ();
 
     return 0;
     }
@@ -1920,15 +1918,15 @@ public:
 
     if (videoStream) {
   retry:
-      if (frame_queue_nb_remaining (&pictq) == 0) {
+      if (pictq.frame_queue_nb_remaining () == 0) {
         // nothing to do, no picture to display in the queue
         }
       else {
         // dequeue the picture
-        sFrame* lastvp = frame_queue_peek_last (&pictq);
-        sFrame* vp = frame_queue_peek (&pictq);
+        sFrame* lastvp = pictq.frame_queue_peek_last ();
+        sFrame* vp = pictq.frame_queue_peek ();
         if (vp->serial != videoq.serial) {
-          frame_queue_next (&pictq);
+          pictq.frame_queue_next ();
           goto retry;
           }
 
@@ -1957,23 +1955,23 @@ public:
           update_video_pts (vp->pts, vp->serial);
         SDL_UnlockMutex (pictq.mutex);
 
-        if (frame_queue_nb_remaining (&pictq) > 1) {
-          sFrame* nextvp = frame_queue_peek_next (&pictq);
+        if (pictq.frame_queue_nb_remaining () > 1) {
+          sFrame* nextvp = pictq.frame_queue_peek_next ();
           double duration = vp_duration (vp, nextvp);
           if (!step && (framedrop>0 || (framedrop && get_master_sync_type () != AV_SYNC_VIDEO_MASTER))
               && time > frame_timer + duration) {
             frame_drops_late++;
-            frame_queue_next (&pictq);
+            pictq.frame_queue_next ();
             goto retry;
             }
           }
 
         if (subtitleStream) {
-          while (frame_queue_nb_remaining (&subpq) > 0) {
-            sFrame* sp = frame_queue_peek (&subpq);
+          while (subpq.frame_queue_nb_remaining () > 0) {
+            sFrame* sp = subpq.frame_queue_peek ();
             sFrame* sp2;
-            if (frame_queue_nb_remaining (&subpq) > 1)
-              sp2 = frame_queue_peek_next (&subpq);
+            if (subpq.frame_queue_nb_remaining () > 1)
+              sp2 = subpq.frame_queue_peek_next ();
             else
               sp2 = NULL;
 
@@ -1994,14 +1992,14 @@ public:
                   }
                 }
 
-              frame_queue_next (&subpq);
+              subpq.frame_queue_next ();
               }
             else
               break;
             }
           }
 
-        frame_queue_next (&pictq);
+        pictq.frame_queue_next ();
         force_refresh = 1;
 
         if (step && !paused)
@@ -2202,9 +2200,9 @@ public:
     subtitleq.packet_queue_destroy();
 
     /* free all pictures */
-    frame_queue_destroy (&pictq);
-    frame_queue_destroy (&sampq);
-    frame_queue_destroy (&subpq);
+    pictq.frame_queue_destroy ();
+    sampq.frame_queue_destroy ();
+    subpq.frame_queue_destroy ();
 
     SDL_DestroyCond (continueReadThread);
     sws_freeContext (sub_convert_ctx);
@@ -2388,12 +2386,12 @@ public:
   //{{{
   void drawVideoDisplay() {
 
-    sFrame* vp = frame_queue_peek_last (&pictq);
+    sFrame* vp = pictq.frame_queue_peek_last ();
     sFrame* sp = NULL;
     if (subtitleStream) {
       //{{{  subtitle
-      if (frame_queue_nb_remaining (&subpq) > 0) {
-        sp = frame_queue_peek (&subpq);
+      if (subpq.frame_queue_nb_remaining () > 0) {
+        sp = subpq.frame_queue_peek ();
         if (vp->pts >= sp->pts + ((float) sp->sub.start_display_time / 1000)) {
           if (!sp->uploaded) {
             uint8_t* pixels[4];
@@ -2878,7 +2876,7 @@ int audioThread (void* arg) {
         tb = av_buffersink_get_time_base (videoState->outAudioFilter);
 
         sFrame* framePeek;
-        if (!(framePeek = frame_queue_peek_writable (&videoState->sampq)))
+        if (!(framePeek = videoState->sampq.frame_queue_peek_writable ()))
           goto the_end;
 
         framePeek->pts = (frame->pts == AV_NOPTS_VALUE) ? NAN : frame->pts * av_q2d(tb);
@@ -2887,7 +2885,7 @@ int audioThread (void* arg) {
         framePeek->duration = av_q2d ({frame->nb_samples, frame->sample_rate});
 
         av_frame_move_ref (framePeek->frame, frame);
-        frame_queue_push (&videoState->sampq);
+        videoState->sampq.frame_queue_push ();
 
         if (videoState->audioq.serial != videoState->auddec.pkt_serial)
           break;
@@ -2912,7 +2910,7 @@ int subtitleThread (void* arg) {
   sVideoState* videoState = (sVideoState*)arg;
 
   for (;;) {
-    sFrame* subtitleFrame = frame_queue_peek_writable(&videoState->subpq);
+    sFrame* subtitleFrame = videoState->subpq.frame_queue_peek_writable();
     if (!subtitleFrame)
       return 0;
 
@@ -2932,7 +2930,7 @@ int subtitleThread (void* arg) {
       subtitleFrame->uploaded = 0;
 
       // now we can update the picture count
-      frame_queue_push (&videoState->subpq);
+      videoState->subpq.frame_queue_push ();
       }
     else if (gotSubtitle)
       avsubtitle_free (&subtitleFrame->sub);
@@ -3511,8 +3509,8 @@ int readThread (void* arg) {
        //}}}
 
     if (!videoState->paused &&
-        (!videoState->audioStream || (videoState->auddec.finished == videoState->audioq.serial && frame_queue_nb_remaining(&videoState->sampq) == 0)) &&
-        (!videoState->videoStream || (videoState->viddec.finished == videoState->videoq.serial && frame_queue_nb_remaining(&videoState->pictq) == 0))) {
+        (!videoState->audioStream || (videoState->auddec.finished == videoState->audioq.serial && videoState->sampq. frame_queue_nb_remaining() == 0)) &&
+        (!videoState->videoStream || (videoState->viddec.finished == videoState->videoq.serial && videoState->pictq.frame_queue_nb_remaining() == 0))) {
       if (loop != 1 && (!loop || --loop))
         videoState->streamSeek (gStartTime != AV_NOPTS_VALUE ? gStartTime : 0, 0, 0);
       else if (autoexit) {
@@ -3754,9 +3752,9 @@ void eventLoop (sVideoState* videoState) {
             if (seek_by_bytes) {
               pos = -1;
               if (pos < 0 && videoState->videoStreamId >= 0)
-                pos = (double)frame_queue_last_pos (&videoState->pictq);
+                pos = (double)videoState->pictq.frame_queue_last_pos ();
               if (pos < 0 && videoState->audioStreamId >= 0)
-                pos = (double)frame_queue_last_pos (&videoState->sampq);
+                pos = (double)videoState->sampq.frame_queue_last_pos ();
               if (pos < 0)
                 pos = (double)avio_tell (videoState->formatContext->pb);
               if (videoState->formatContext->bit_rate)
