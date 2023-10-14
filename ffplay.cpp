@@ -805,6 +805,34 @@ public:
 //{{{
 class sFrameQueue {
 public:
+  //{{{
+  int frame_queue_init (sPacketQueue* newPacketQueue, int newMaxSize, int newKeepLast) {
+
+    memset (this, 0, sizeof(sFrameQueue));
+
+    if (!(mutex = SDL_CreateMutex())) {
+      av_log (NULL, AV_LOG_FATAL, "SDL_CreateMutex(): %s\n", SDL_GetError());
+      return AVERROR(ENOMEM);
+      }
+
+    if (!(cond = SDL_CreateCond())) {
+      //{{{  error return
+      av_log (NULL, AV_LOG_FATAL, "SDL_CreateCond(): %s\n", SDL_GetError());
+      return AVERROR(ENOMEM);
+      }
+      //}}}
+
+    packetQueue = newPacketQueue;
+    maxSize = FFMIN(newMaxSize, FRAME_QUEUE_SIZE);
+    keepLast = !!newKeepLast;
+    for (int i = 0; i < maxSize; i++)
+      if (!(queue[i].frame = av_frame_alloc()))
+        return AVERROR(ENOMEM);
+
+    return 0;
+    }
+  //}}}
+
   sFrame queue[FRAME_QUEUE_SIZE];
 
   int rindex;
@@ -826,33 +854,6 @@ void frame_queue_unref_item (sFrame* vp) {
 
   av_frame_unref (vp->frame);
   avsubtitle_free (&vp->sub);
-  }
-//}}}
-//{{{
-int frame_queue_init (sFrameQueue* frameQueue, sPacketQueue* newPacketQueue, int newMaxSize, int newKeepLast) {
-
-  memset (frameQueue, 0, sizeof(sFrameQueue));
-
-  if (!(frameQueue->mutex = SDL_CreateMutex())) {
-    av_log (NULL, AV_LOG_FATAL, "SDL_CreateMutex(): %s\n", SDL_GetError());
-    return AVERROR(ENOMEM);
-    }
-
-  if (!(frameQueue->cond = SDL_CreateCond())) {
-    //{{{  error return
-    av_log (NULL, AV_LOG_FATAL, "SDL_CreateCond(): %s\n", SDL_GetError());
-    return AVERROR(ENOMEM);
-    }
-    //}}}
-
-  frameQueue->packetQueue = newPacketQueue;
-  frameQueue->maxSize = FFMIN(newMaxSize, FRAME_QUEUE_SIZE);
-  frameQueue->keepLast = !!newKeepLast;
-  for (int i = 0; i < frameQueue->maxSize; i++)
-    if (!(frameQueue->queue[i].frame = av_frame_alloc()))
-      return AVERROR(ENOMEM);
-
-  return 0;
   }
 //}}}
 //{{{
@@ -3601,11 +3602,11 @@ sVideoState* streamOpen (const char* filename, const AVInputFormat* inputFileFor
   videoState->xleft = 0;
 
   // start video display
-  if (frame_queue_init (&videoState->pictq, &videoState->videoq, VIDEO_PICTURE_QUEUE_SIZE, 1) < 0)
+  if (videoState->pictq.frame_queue_init (&videoState->videoq, VIDEO_PICTURE_QUEUE_SIZE, 1) < 0)
     goto fail;
-  if (frame_queue_init (&videoState->subpq, &videoState->subtitleq, SUBPICTURE_QUEUE_SIZE, 0) < 0)
+  if (videoState->subpq.frame_queue_init (&videoState->subtitleq, SUBPICTURE_QUEUE_SIZE, 0) < 0)
     goto fail;
-  if (frame_queue_init (&videoState->sampq, &videoState->audioq, SAMPLE_QUEUE_SIZE, 1) < 0)
+  if (videoState->sampq.frame_queue_init (&videoState->audioq, SAMPLE_QUEUE_SIZE, 1) < 0)
     goto fail;
 
   if (videoState->videoq.packet_queue_init() < 0 ||
