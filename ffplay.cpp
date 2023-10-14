@@ -558,7 +558,7 @@ public:
 
   //{{{
   /* packet queue handling */
-  int packet_queue_ini () {
+  int packet_queue_init () {
 
     memset (this, 0, sizeof(sPacketQueue));
 
@@ -689,31 +689,6 @@ public:
   SDL_cond* cond;
   };
 //}}}
-//{{{  sPacketQueue
-//{{{
-int packet_queue_put_private (sPacketQueue* q, AVPacket* pkt) {
-
-
-  if (q->abort_request)
-    return -1;
-
-  sPacketList pkt1;
-  pkt1.pkt = pkt;
-  pkt1.serial = q->serial;
-
-  int ret = av_fifo_write (q->pkt_list, &pkt1, 1);
-  if (ret < 0)
-    return ret;
-
-  q->nb_packets++;
-  q->size += pkt1.pkt->size + sizeof(pkt1);
-  q->duration += pkt1.pkt->duration;
-
-  /* XXX: should duplicate packet data in DV case */
-  SDL_CondSignal (q->cond);
-  return 0;
-  }
-//}}}
 //{{{
 int packet_queue_put (sPacketQueue* q, AVPacket* pkt) {
 
@@ -725,7 +700,7 @@ int packet_queue_put (sPacketQueue* q, AVPacket* pkt) {
   av_packet_move_ref (pkt1, pkt);
 
   SDL_LockMutex (q->mutex);
-  int ret = packet_queue_put_private (q, pkt1);
+  int ret = q->packet_queue_put_private (pkt1);
   SDL_UnlockMutex (q->mutex);
 
   if (ret < 0)
@@ -734,67 +709,6 @@ int packet_queue_put (sPacketQueue* q, AVPacket* pkt) {
   return ret;
   }
 //}}}
-//{{{
-int packet_queue_put_nullpacket (sPacketQueue* q, AVPacket* pkt, int stream_index) {
-
-  pkt->stream_index = stream_index;
-  return packet_queue_put (q, pkt);
-  }
-//}}}
-
-//{{{
-/* packet queue handling */
-int packet_queue_init (sPacketQueue* q) {
-
-  memset (q, 0, sizeof(sPacketQueue));
-
-  q->pkt_list = av_fifo_alloc2 (1, sizeof(sPacketList), AV_FIFO_FLAG_AUTO_GROW);
-  if (!q->pkt_list)
-    return AVERROR(ENOMEM);
-
-  q->mutex = SDL_CreateMutex();
-  if (!q->mutex) {
-    av_log (NULL, AV_LOG_FATAL, "SDL_CreateMutex(): %s\n", SDL_GetError());
-    return AVERROR(ENOMEM);
-    }
-
-  q->cond = SDL_CreateCond();
-  if (!q->cond) {
-    av_log (NULL, AV_LOG_FATAL, "SDL_CreateCond(): %s\n", SDL_GetError());
-    return AVERROR(ENOMEM);
-    }
-
-  q->abort_request = 1;
-
-  return 0;
-  }
-//}}}
-//{{{
-void packet_queue_flush (sPacketQueue* q) {
-
-  sPacketList pkt1;
-
-  SDL_LockMutex (q->mutex);
-  while (av_fifo_read (q->pkt_list, &pkt1, 1) >= 0)
-    av_packet_free (&pkt1.pkt);
-
-  q->nb_packets = 0;
-  q->size = 0;
-  q->duration = 0;
-  q->serial++;
-
-  SDL_UnlockMutex (q->mutex);
-  }
-//}}}
-//{{{
-void packet_queue_destroy (sPacketQueue* q) {
-
-  packet_queue_flush (q);
-  av_fifo_freep2 (&q->pkt_list);
-
-  SDL_DestroyMutex (q->mutex);
-  SDL_DestroyCond (q->cond);
-  }
 //}}}
 //{{{
 void packet_queue_abort (sPacketQueue* q) {
@@ -859,7 +773,6 @@ int packet_queue_get (sPacketQueue* q, AVPacket* pkt, int block, int* serial) {
 
   return ret;
   }
-//}}}
 //}}}
 //{{{
 class sAudioParams {
@@ -1158,12 +1071,12 @@ public:
   //{{{
   void decoderAbort (sFrameQueue* frameQueue) {
 
-    packet_queue_abort (queue);
+    queue->packet_queue_abort();
     frame_queue_signal (frameQueue);
     SDL_WaitThread (decoder_tid, NULL);
 
     decoder_tid = NULL;
-    packet_queue_flush (queue);
+    queue->packet_queue_flush ();
     }
   //}}}
   //{{{
@@ -2377,9 +2290,9 @@ public:
 
     avformat_close_input (&formatContext);
 
-    packet_queue_destroy (&videoq);
-    packet_queue_destroy (&audioq);
-    packet_queue_destroy (&subtitleq);
+    videoq.packet_queue_destroy();
+    audioq.packet_queue_destroy();
+    subtitleq.packet_queue_destroy();
 
     /* free all pictures */
     frame_queue_destroy (&pictq);
@@ -3648,11 +3561,11 @@ int readThread (void* arg) {
         av_log (NULL, AV_LOG_ERROR, "%s: error while seeking\n", videoState->formatContext->url);
       else {
         if (videoState->audioStreamId >= 0)
-          packet_queue_flush (&videoState->audioq);
+          videoState->audioq.packet_queue_flush ();
         if (videoState->subtitleStreamId >= 0)
-          packet_queue_flush (&videoState->subtitleq);
+          videoState->subtitleq.packet_queue_flush ();
         if (videoState->videoStreamId >= 0)
-          packet_queue_flush (&videoState->videoq);
+          videoState->videoq.packet_queue_flush ();
         if (videoState->seek_flags & AVSEEK_FLAG_BYTE)
           videoState->extclk.set_clock (NAN, 0);
         else
@@ -3671,7 +3584,7 @@ int readThread (void* arg) {
         if ((ret = av_packet_ref (pkt, &videoState->videoStream->attached_pic)) < 0)
           goto fail;
         packet_queue_put (&videoState->videoq, pkt);
-        packet_queue_put_nullpacket (&videoState->videoq, pkt, videoState->videoStreamId);
+        videoState->videoq.packet_queue_put_nullpacket (pkt, videoState->videoStreamId);
         }
       videoState->queue_attachments_req = 0;
       }
@@ -3705,11 +3618,11 @@ int readThread (void* arg) {
     if (ret < 0) {
       if ((ret == AVERROR_EOF || avio_feof(formatContext->pb)) && !videoState->eof) {
         if (videoState->videoStreamId >= 0)
-          packet_queue_put_nullpacket (&videoState->videoq, pkt, videoState->videoStreamId);
+          videoState->videoq.packet_queue_put_nullpacket (pkt, videoState->videoStreamId);
         if (videoState->audioStreamId >= 0)
-          packet_queue_put_nullpacket (&videoState->audioq, pkt, videoState->audioStreamId);
+          videoState->audioq.packet_queue_put_nullpacket (pkt, videoState->audioStreamId);
         if (videoState->subtitleStreamId >= 0)
-          packet_queue_put_nullpacket (&videoState->subtitleq, pkt, videoState->subtitleStreamId);
+          videoState->subtitleq.packet_queue_put_nullpacket (pkt, videoState->subtitleStreamId);
         videoState->eof = 1;
         }
 
@@ -3790,9 +3703,9 @@ sVideoState* streamOpen (const char* filename, const AVInputFormat* inputFileFor
   if (frame_queue_init (&videoState->sampq, &videoState->audioq, SAMPLE_QUEUE_SIZE, 1) < 0)
     goto fail;
 
-  if (packet_queue_init (&videoState->videoq) < 0 ||
-      packet_queue_init (&videoState->audioq) < 0 ||
-      packet_queue_init (&videoState->subtitleq) < 0)
+  if (videoState->videoq.packet_queue_init() < 0 ||
+      videoState->audioq.packet_queue_init() < 0 ||
+      videoState->subtitleq.packet_queue_init () < 0)
     goto fail;
 
   if (!(videoState->continueReadThread = SDL_CreateCond())) {
