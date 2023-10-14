@@ -785,6 +785,14 @@ public:
 //{{{
 class sFrame {
 public:
+  //{{{
+  void frame_queue_unref_item() {
+
+    av_frame_unref (frame);
+    avsubtitle_free (&sub);
+    }
+  //}}}
+
   AVFrame* frame;
   AVSubtitle sub;
 
@@ -850,19 +858,12 @@ public:
   };
 
 //{{{
-void frame_queue_unref_item (sFrame* vp) {
-
-  av_frame_unref (vp->frame);
-  avsubtitle_free (&vp->sub);
-  }
-//}}}
-//{{{
 void frame_queue_destroy (sFrameQueue* frameQueue) {
 
   for (int i = 0; i < frameQueue->maxSize; i++) {
-    sFrame* vp = &frameQueue->queue[i];
-    frame_queue_unref_item (vp);
-    av_frame_free (&vp->frame);
+    sFrame* frame = &frameQueue->queue[i];
+  frame->  frame_queue_unref_item();
+    av_frame_free (&frame->frame);
     }
 
   SDL_DestroyMutex (frameQueue->mutex);
@@ -944,7 +945,7 @@ void frame_queue_next (sFrameQueue* frameQueue) {
     return;
     }
 
-  frame_queue_unref_item(&frameQueue->queue[frameQueue->rindex]);
+  frameQueue->queue[frameQueue->rindex].frame_queue_unref_item();
   if (++frameQueue->rindex == frameQueue->maxSize)
     frameQueue->rindex = 0;
 
