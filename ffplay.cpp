@@ -592,9 +592,8 @@ public:
   //}}}
 
   //{{{
-
   /* return < 0 if aborted, 0 if no packet and > 0 if packet.  */
-  int packet_queue_get (AVPacket* newPpkt, int block, int* serialId) {
+  int packet_queue_get (AVPacket* newPkt, int block, int* newSerial) {
 
     int ret = 0;
 
@@ -611,9 +610,9 @@ public:
         nb_packets--;
         size -= pkt1.pkt->size + sizeof(pkt1);
         duration -= pkt1.pkt->duration;
-        av_packet_move_ref (pkt, pkt1.pkt);
-        if (serial)
-           *serialId = pkt1.serial;
+        av_packet_move_ref (newPkt, pkt1.pkt);
+        if (newSerial)
+            *newSerial = pkt1.serial;
         av_packet_free (&pkt1.pkt);
         ret = 1;
         break;
@@ -624,7 +623,7 @@ public:
         }
       else
         SDL_CondWait (cond, mutex);
-       }
+      }
 
     SDL_UnlockMutex (mutex);
 
@@ -688,47 +687,6 @@ public:
   SDL_mutex* mutex;
   SDL_cond* cond;
   };
-//}}}
-
-//{{{
-/* return < 0 if aborted, 0 if no packet and > 0 if packet.  */
-int packet_queue_get (sPacketQueue* q, AVPacket* pkt, int block, int* serial) {
-
-  int ret = 0;
-
-  SDL_LockMutex (q->mutex);
-
-  for (;;) {
-    if (q->abort_request) {
-      ret = -1;
-      break;
-      }
-
-    sPacketList pkt1;
-    if (av_fifo_read (q->pkt_list, &pkt1, 1) >= 0) {
-      q->nb_packets--;
-      q->size -= pkt1.pkt->size + sizeof(pkt1);
-      q->duration -= pkt1.pkt->duration;
-      av_packet_move_ref (pkt, pkt1.pkt);
-      if (serial)
-          *serial = pkt1.serial;
-      av_packet_free (&pkt1.pkt);
-      ret = 1;
-      break;
-      }
-    else if (!block) {
-      ret = 0;
-      break;
-      }
-    else {
-      SDL_CondWait (q->cond, q->mutex);
-      }
-    }
-
-  SDL_UnlockMutex (q->mutex);
-
-  return ret;
-  }
 //}}}
 //{{{
 class sAudioParams {
@@ -864,7 +822,6 @@ public:
   sPacketQueue* pktq;
   };
 //}}}
-//{{{  sFrameQueue
 //{{{
 void frame_queue_unref_item (sFrame* vp) {
 
@@ -872,7 +829,6 @@ void frame_queue_unref_item (sFrame* vp) {
   avsubtitle_free (&vp->sub);
   }
 //}}}
-
 //{{{
 int frame_queue_init (sFrameQueue* frameQueue, sPacketQueue* pktq, int max_size, int keep_last) {
 
@@ -913,7 +869,6 @@ void frame_queue_destroy (sFrameQueue* frameQueue) {
   SDL_DestroyCond (frameQueue->cond);
   }
 //}}}
-
 //{{{
 void frame_queue_signal (sFrameQueue* frameQueue) {
 
@@ -922,7 +877,6 @@ void frame_queue_signal (sFrameQueue* frameQueue) {
   SDL_UnlockMutex (frameQueue->mutex);
   }
 //}}}
-
 //{{{
 sFrame* frame_queue_peek (sFrameQueue* frameQueue) {
   return &frameQueue->queue[(frameQueue->rindex + frameQueue->rindex_shown) % frameQueue->max_size];
@@ -970,7 +924,6 @@ sFrame* frame_queue_peek_readable (sFrameQueue* frameQueue) {
   return &frameQueue->queue[(frameQueue->rindex + frameQueue->rindex_shown) % frameQueue->max_size];
   }
 //}}}
-
 //{{{
 void frame_queue_push (sFrameQueue* frameQueue) {
 
@@ -1001,7 +954,6 @@ void frame_queue_next (sFrameQueue* frameQueue) {
   SDL_UnlockMutex (frameQueue->mutex);
   }
 //}}}
-
 //{{{
 /* return the number of undisplayed frames in the queue */
 int frame_queue_nb_remaining (sFrameQueue* frameQueue) {
@@ -1019,11 +971,27 @@ int64_t frame_queue_last_pos (sFrameQueue* frameQueue) {
     return -1;
   }
 //}}}
-//}}}
 
 //{{{
 class sDecoder {
 public:
+  //{{{
+  int decoderInit (AVCodecContext* newAvctx, sPacketQueue* newQueue, SDL_cond* newEmpty_queue_cond) {
+
+    memset (this, 0, sizeof(sDecoder));
+
+    pkt = av_packet_alloc();
+    if (!pkt)
+      return AVERROR(ENOMEM);
+    avctx = newAvctx;
+    queue = newQueue;
+    empty_queue_cond = newEmpty_queue_cond;
+    start_pts = AV_NOPTS_VALUE;
+    pkt_serial = -1;
+
+    return 0;
+    }
+  //}}}
   //{{{
   void decoderAbort (sFrameQueue* frameQueue) {
 
@@ -1061,23 +1029,6 @@ public:
 
   SDL_Thread* decoder_tid;
   };
-//}}}
-//{{{
-int decoderInit (sDecoder* d, AVCodecContext* avctx, sPacketQueue* queue, SDL_cond* empty_queue_cond) {
-
-  memset (d, 0, sizeof(sDecoder));
-
-  d->pkt = av_packet_alloc();
-  if (!d->pkt)
-    return AVERROR(ENOMEM);
-  d->avctx = avctx;
-  d->queue = queue;
-  d->empty_queue_cond = empty_queue_cond;
-  d->start_pts = AV_NOPTS_VALUE;
-  d->pkt_serial = -1;
-
-  return 0;
-  }
 //}}}
 //{{{
 int decoderStart (sDecoder* d, int (*fn)(void*), const char* thread_name, void* arg) {
@@ -1155,7 +1106,7 @@ int decodeFrame (sDecoder* decoder, AVFrame* frame, AVSubtitle* sub) {
         decoder->packet_pending = 0;
       else {
         int old_serial = decoder->pkt_serial;
-        if (packet_queue_get (decoder->queue, decoder->pkt, 1, &decoder->pkt_serial) < 0)
+        if (decoder->queue->packet_queue_get (decoder->pkt, 1, &decoder->pkt_serial) < 0)
           return -1;
         if (old_serial != decoder->pkt_serial) {
           avcodec_flush_buffers (decoder->avctx);
@@ -3130,7 +3081,7 @@ int streamComponentOpen (sVideoState* videoState, int stream_index) {
       videoState->audioStreamId = stream_index;
       videoState->audioStream = formatContext->streams[stream_index];
 
-      if ((ret = decoderInit (&videoState->auddec, avctx, &videoState->audioq,
+      if ((ret = videoState->auddec.decoderInit (avctx, &videoState->audioq,
                               videoState->continueReadThread)) < 0)
         goto fail;
 
@@ -3149,7 +3100,7 @@ int streamComponentOpen (sVideoState* videoState, int stream_index) {
       videoState->videoStreamId = stream_index;
         videoState->videoStream = formatContext->streams[stream_index];
 
-      if ((ret = decoderInit (&videoState->viddec, avctx, &videoState->videoq,
+      if ((ret = videoState->viddec.decoderInit (avctx, &videoState->videoq,
                               videoState->continueReadThread)) < 0)
         goto fail;
 
@@ -3165,7 +3116,7 @@ int streamComponentOpen (sVideoState* videoState, int stream_index) {
       videoState->subtitleStreamId = stream_index;
       videoState->subtitleStream = formatContext->streams[stream_index];
 
-      if ((ret = decoderInit (&videoState->subdec, avctx, &videoState->subtitleq, videoState->continueReadThread)) < 0)
+      if ((ret = videoState->subdec.decoderInit (avctx, &videoState->subtitleq, videoState->continueReadThread)) < 0)
         goto fail;
 
       if ((ret = decoderStart (&videoState->subdec, subtitleThread, "subtitle_decoder", videoState)) < 0)
