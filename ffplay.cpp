@@ -2514,6 +2514,93 @@ public:
     }
   //}}}
   //{{{
+  void streamCycleChannel (int codec_type) {
+
+    AVFormatContext* ic = formatContext;
+    int nb_streams = formatContext->nb_streams;
+
+    int start_index;
+    int old_index;
+    if (codec_type == AVMEDIA_TYPE_VIDEO) {
+      start_index = last_videoStreamId;
+      old_index = videoStreamId;
+      }
+    else if (codec_type == AVMEDIA_TYPE_AUDIO) {
+      start_index = last_audioStreamId;
+      old_index = audioStreamId;
+      }
+    else {
+      start_index = last_subtitleStreamId;
+      old_index = subtitleStreamId;
+      }
+    int stream_index = start_index;
+
+    AVProgram* p = NULL;
+    if (codec_type != AVMEDIA_TYPE_VIDEO && videoStreamId != -1) {
+      p = av_find_program_from_stream (ic, NULL, videoStreamId);
+      if (p) {
+        nb_streams = p->nb_stream_indexes;
+        for (start_index = 0; start_index < (int)nb_streams; start_index++)
+          if (p->stream_index[start_index] == (unsigned int)stream_index)
+            break;
+        if (start_index == nb_streams)
+          start_index = -1;
+        stream_index = start_index;
+        }
+      }
+
+    for (;;) {
+      if (++stream_index >= nb_streams) {
+        if (codec_type == AVMEDIA_TYPE_SUBTITLE) {
+          //{{{  subtitle
+          stream_index = -1;
+          last_subtitleStreamId = -1;
+
+          goto the_end;
+          }
+          //}}}
+        if (start_index == -1)
+          return;
+        stream_index = 0;
+        }
+      if (stream_index == start_index)
+        return;
+
+      AVStream* st = formatContext->streams[p ? p->stream_index[stream_index] : stream_index];
+      if (st->codecpar->codec_type == codec_type) {
+        // check that parameters are OK
+        switch (codec_type) {
+          //{{{
+          case AVMEDIA_TYPE_AUDIO:
+            if (st->codecpar->sample_rate != 0 && st->codecpar->ch_layout.nb_channels != 0)
+              goto the_end;
+            break;
+          //}}}
+          case AVMEDIA_TYPE_VIDEO:
+          //{{{
+          case AVMEDIA_TYPE_SUBTITLE:
+            goto the_end;
+          //}}}
+          //{{{
+          default:
+            break;
+          //}}}
+          }
+        }
+      }
+
+  the_end:
+    if (p && stream_index != -1)
+      stream_index = p->stream_index[stream_index];
+
+    av_log (NULL, AV_LOG_INFO, "Switch %s stream from #%d to #%d\n",
+                               av_get_media_type_string ((AVMediaType)codec_type), old_index, stream_index);
+
+    streamComponentClose (old_index);
+    streamComponentOpen (stream_index);
+    }
+  //}}}
+  //{{{
   void streamSeek (int64_t pos, int64_t rel, int by_bytes) {
   /* seek in the stream */
 
@@ -3141,93 +3228,6 @@ public:
 
 // stream
 //{{{
-void streamCycleChannel (sVideoState* videoState, int codec_type) {
-
-  AVFormatContext* ic = videoState->formatContext;
-  int nb_streams = videoState->formatContext->nb_streams;
-
-  int start_index;
-  int old_index;
-  if (codec_type == AVMEDIA_TYPE_VIDEO) {
-    start_index = videoState->last_videoStreamId;
-    old_index = videoState->videoStreamId;
-    }
-  else if (codec_type == AVMEDIA_TYPE_AUDIO) {
-    start_index = videoState->last_audioStreamId;
-    old_index = videoState->audioStreamId;
-    }
-  else {
-    start_index = videoState->last_subtitleStreamId;
-    old_index = videoState->subtitleStreamId;
-    }
-  int stream_index = start_index;
-
-  AVProgram* p = NULL;
-  if (codec_type != AVMEDIA_TYPE_VIDEO && videoState->videoStreamId != -1) {
-    p = av_find_program_from_stream (ic, NULL, videoState->videoStreamId);
-    if (p) {
-      nb_streams = p->nb_stream_indexes;
-      for (start_index = 0; start_index < (int)nb_streams; start_index++)
-        if (p->stream_index[start_index] == (unsigned int)stream_index)
-          break;
-      if (start_index == nb_streams)
-        start_index = -1;
-      stream_index = start_index;
-      }
-    }
-
-  for (;;) {
-    if (++stream_index >= nb_streams) {
-      if (codec_type == AVMEDIA_TYPE_SUBTITLE) {
-        //{{{  subtitle
-        stream_index = -1;
-        videoState->last_subtitleStreamId = -1;
-
-        goto the_end;
-        }
-        //}}}
-      if (start_index == -1)
-        return;
-      stream_index = 0;
-      }
-    if (stream_index == start_index)
-      return;
-
-    AVStream* st = videoState->formatContext->streams[p ? p->stream_index[stream_index] : stream_index];
-    if (st->codecpar->codec_type == codec_type) {
-      // check that parameters are OK
-      switch (codec_type) {
-        //{{{
-        case AVMEDIA_TYPE_AUDIO:
-          if (st->codecpar->sample_rate != 0 && st->codecpar->ch_layout.nb_channels != 0)
-            goto the_end;
-          break;
-        //}}}
-        case AVMEDIA_TYPE_VIDEO:
-        //{{{
-        case AVMEDIA_TYPE_SUBTITLE:
-          goto the_end;
-        //}}}
-        //{{{
-        default:
-          break;
-        //}}}
-        }
-      }
-    }
-
-the_end:
-  if (p && stream_index != -1)
-    stream_index = p->stream_index[stream_index];
-
-  av_log (NULL, AV_LOG_INFO, "Switch %s stream from #%d to #%d\n",
-                             av_get_media_type_string ((AVMediaType)codec_type), old_index, stream_index);
-
-  videoState->streamComponentClose (old_index);
-  videoState->streamComponentOpen (stream_index);
-  }
-//}}}
-//{{{
 int decodeInterruptCallback (void* ctx) {
 
   sVideoState* videoState = (sVideoState*)ctx;
@@ -3587,7 +3587,7 @@ fail:
 //{{{
 sVideoState* streamOpen (const char* filename, const AVInputFormat* inputFileFormat) {
 
-  sVideoState* videoState = (sVideoState*) av_mallocz (sizeof(sVideoState));
+  sVideoState* videoState = (sVideoState*)av_mallocz (sizeof(sVideoState));
   if (!videoState)
     return NULL;
 
@@ -3689,25 +3689,25 @@ void eventLoop (sVideoState* videoState) {
            continue;
 
         switch (event.key.keysym.sym) {
-          case SDLK_p:
           case SDLK_SPACE: videoState->togglePause(); break;
+          case SDLK_f: videoState->toggleFullScreen(); videoState->force_refresh = 1; break;
+          
           case SDLK_m: videoState->toggleMute(); break;
           case SDLK_KP_MULTIPLY:
           case SDLK_0: videoState->updateVolume (1, SDL_VOLUME_STEP); break;
           case SDLK_KP_DIVIDE:
           case SDLK_9: videoState->updateVolume(-1, SDL_VOLUME_STEP); break;
-          case SDLK_s: videoState->stepToNextFrame(); break;
 
-          case SDLK_a: streamCycleChannel (videoState, AVMEDIA_TYPE_AUDIO); break;
-          case SDLK_v: streamCycleChannel (videoState, AVMEDIA_TYPE_VIDEO); break;
+          case SDLK_a: videoState->streamCycleChannel (AVMEDIA_TYPE_AUDIO); break;
+          case SDLK_v: videoState->streamCycleChannel (AVMEDIA_TYPE_VIDEO); break;
           //{{{
           case SDLK_c: // cycle stream
-            streamCycleChannel (videoState, AVMEDIA_TYPE_VIDEO);
-            streamCycleChannel (videoState, AVMEDIA_TYPE_AUDIO);
-            streamCycleChannel (videoState, AVMEDIA_TYPE_SUBTITLE);
+            videoState->streamCycleChannel (AVMEDIA_TYPE_VIDEO);
+            videoState->streamCycleChannel (AVMEDIA_TYPE_AUDIO);
+            videoState->streamCycleChannel (AVMEDIA_TYPE_SUBTITLE);
             break;
           //}}}
-          case SDLK_t: streamCycleChannel (videoState, AVMEDIA_TYPE_SUBTITLE); break;
+          case SDLK_t: videoState->streamCycleChannel (AVMEDIA_TYPE_SUBTITLE); break;
 
           //{{{
           case SDLK_w:
@@ -3721,7 +3721,7 @@ void eventLoop (sVideoState* videoState) {
               }
             break;
           //}}}
-          case SDLK_f: videoState->toggleFullScreen(); videoState->force_refresh = 1; break;
+          
 
           //{{{
           case SDLK_PAGEUP:
