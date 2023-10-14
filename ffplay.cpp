@@ -802,7 +802,6 @@ public:
   int flip_v;
   };
 //}}}
-
 //{{{
 class sFrameQueue {
 public:
@@ -812,16 +811,16 @@ public:
   int windex;
 
   int size;
-  int max_size;
-  int keep_last;
-  int rindex_shown;
+  int maxSize;
+  int keepLast;
+  int rindexShown;
 
   SDL_mutex* mutex;
   SDL_cond* cond;
 
-  sPacketQueue* pktq;
+  sPacketQueue* packetQueue;
   };
-//}}}
+
 //{{{
 void frame_queue_unref_item (sFrame* vp) {
 
@@ -830,7 +829,7 @@ void frame_queue_unref_item (sFrame* vp) {
   }
 //}}}
 //{{{
-int frame_queue_init (sFrameQueue* frameQueue, sPacketQueue* pktq, int max_size, int keep_last) {
+int frame_queue_init (sFrameQueue* frameQueue, sPacketQueue* newPacketQueue, int newMaxSize, int newKeepLast) {
 
   memset (frameQueue, 0, sizeof(sFrameQueue));
 
@@ -846,10 +845,10 @@ int frame_queue_init (sFrameQueue* frameQueue, sPacketQueue* pktq, int max_size,
     }
     //}}}
 
-  frameQueue->pktq = pktq;
-  frameQueue->max_size = FFMIN(max_size, FRAME_QUEUE_SIZE);
-  frameQueue->keep_last = !!keep_last;
-  for (int i = 0; i < frameQueue->max_size; i++)
+  frameQueue->packetQueue = newPacketQueue;
+  frameQueue->maxSize = FFMIN(newMaxSize, FRAME_QUEUE_SIZE);
+  frameQueue->keepLast = !!newKeepLast;
+  for (int i = 0; i < frameQueue->maxSize; i++)
     if (!(frameQueue->queue[i].frame = av_frame_alloc()))
       return AVERROR(ENOMEM);
 
@@ -859,7 +858,7 @@ int frame_queue_init (sFrameQueue* frameQueue, sPacketQueue* pktq, int max_size,
 //{{{
 void frame_queue_destroy (sFrameQueue* frameQueue) {
 
-  for (int i = 0; i < frameQueue->max_size; i++) {
+  for (int i = 0; i < frameQueue->maxSize; i++) {
     sFrame* vp = &frameQueue->queue[i];
     frame_queue_unref_item (vp);
     av_frame_free (&vp->frame);
@@ -879,12 +878,12 @@ void frame_queue_signal (sFrameQueue* frameQueue) {
 //}}}
 //{{{
 sFrame* frame_queue_peek (sFrameQueue* frameQueue) {
-  return &frameQueue->queue[(frameQueue->rindex + frameQueue->rindex_shown) % frameQueue->max_size];
+  return &frameQueue->queue[(frameQueue->rindex + frameQueue->rindexShown) % frameQueue->maxSize];
   }
 //}}}
 //{{{
 sFrame* frame_queue_peek_next (sFrameQueue* frameQueue) {
-  return &frameQueue->queue[(frameQueue->rindex + frameQueue->rindex_shown + 1) % frameQueue->max_size];
+  return &frameQueue->queue[(frameQueue->rindex + frameQueue->rindexShown + 1) % frameQueue->maxSize];
    }
 //}}}
 //{{{
@@ -898,12 +897,12 @@ sFrame* frame_queue_peek_writable (sFrameQueue* frameQueue) {
   /* wait until we have space to put a new frame */
   SDL_LockMutex (frameQueue->mutex);
 
-  while (frameQueue->size >= frameQueue->max_size && !frameQueue->pktq->abort_request) {
+  while (frameQueue->size >= frameQueue->maxSize && !frameQueue->packetQueue->abort_request) {
     SDL_CondWait (frameQueue->cond, frameQueue->mutex);
     }
    SDL_UnlockMutex (frameQueue->mutex);
 
-  if (frameQueue->pktq->abort_request)
+  if (frameQueue->packetQueue->abort_request)
     return NULL;
 
   return &frameQueue->queue[frameQueue->windex];
@@ -914,20 +913,20 @@ sFrame* frame_queue_peek_readable (sFrameQueue* frameQueue) {
 
   /* wait until we have a readable a new frame */
   SDL_LockMutex (frameQueue->mutex);
-  while (frameQueue->size - frameQueue->rindex_shown <= 0 && !frameQueue->pktq->abort_request)
+  while (frameQueue->size - frameQueue->rindexShown <= 0 && !frameQueue->packetQueue->abort_request)
     SDL_CondWait (frameQueue->cond, frameQueue->mutex);
    SDL_UnlockMutex (frameQueue->mutex);
 
-  if (frameQueue->pktq->abort_request)
+  if (frameQueue->packetQueue->abort_request)
     return NULL;
 
-  return &frameQueue->queue[(frameQueue->rindex + frameQueue->rindex_shown) % frameQueue->max_size];
+  return &frameQueue->queue[(frameQueue->rindex + frameQueue->rindexShown) % frameQueue->maxSize];
   }
 //}}}
 //{{{
 void frame_queue_push (sFrameQueue* frameQueue) {
 
-  if (++frameQueue->windex == frameQueue->max_size)
+  if (++frameQueue->windex == frameQueue->maxSize)
     frameQueue->windex = 0;
 
   SDL_LockMutex (frameQueue->mutex);
@@ -939,13 +938,13 @@ void frame_queue_push (sFrameQueue* frameQueue) {
 //{{{
 void frame_queue_next (sFrameQueue* frameQueue) {
 
-  if (frameQueue->keep_last && !frameQueue->rindex_shown) {
-    frameQueue->rindex_shown = 1;
+  if (frameQueue->keepLast && !frameQueue->rindexShown) {
+    frameQueue->rindexShown = 1;
     return;
     }
 
   frame_queue_unref_item(&frameQueue->queue[frameQueue->rindex]);
-  if (++frameQueue->rindex == frameQueue->max_size)
+  if (++frameQueue->rindex == frameQueue->maxSize)
     frameQueue->rindex = 0;
 
   SDL_LockMutex (frameQueue->mutex);
@@ -957,7 +956,7 @@ void frame_queue_next (sFrameQueue* frameQueue) {
 //{{{
 /* return the number of undisplayed frames in the queue */
 int frame_queue_nb_remaining (sFrameQueue* frameQueue) {
-  return frameQueue->size - frameQueue->rindex_shown;
+  return frameQueue->size - frameQueue->rindexShown;
   }
 //}}}
 //{{{
@@ -965,13 +964,13 @@ int frame_queue_nb_remaining (sFrameQueue* frameQueue) {
 int64_t frame_queue_last_pos (sFrameQueue* frameQueue) {
 
   sFrame* fp = &frameQueue->queue[frameQueue->rindex];
-  if (frameQueue->rindex_shown && fp->serial == frameQueue->pktq->serial)
+  if (frameQueue->rindexShown && fp->serial == frameQueue->packetQueue->serial)
     return fp->pos;
   else
     return -1;
   }
 //}}}
-
+//}}}
 //{{{
 class sDecoder {
 public:
@@ -2011,7 +2010,7 @@ public:
       // display picture
       if (!gDisplayDisable &&
           force_refresh &&
-          show_mode == SHOW_MODE_VIDEO && pictq.rindex_shown)
+          show_mode == SHOW_MODE_VIDEO && pictq.rindexShown)
         videoDisplay();
         }
 
