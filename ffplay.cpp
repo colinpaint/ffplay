@@ -225,7 +225,7 @@ namespace {
 
   static const char** videoFiltersList = NULL;
   static int numVideoFilters = 0;
-  static char* afilters = NULL;
+  static char* audioFilters = NULL;
 
   static int autorotate = 1;
   static int find_stream_info = 1;
@@ -1573,8 +1573,8 @@ public:
     if ((ret = configureFilterGraph (graph, filters, filt_src, last_filter)) < 0)
       goto fail;
 
-    in_video_filter  = filt_src;
-    out_video_filter = filt_out;
+    inVideoFilter  = filt_src;
+    outVideoFilter = filt_out;
 
   fail:
     return ret;
@@ -1643,8 +1643,8 @@ public:
     if ((ret = configureFilterGraph (agraph, filters, filt_asrc, filt_asink)) < 0)
       goto end;
 
-    in_audio_filter  = filt_asrc;
-    out_audio_filter = filt_asink;
+    inAudioFilter  = filt_asrc;
+    outAudioFilter = filt_asink;
 
   end:
     if (ret < 0)
@@ -2634,11 +2634,11 @@ public:
   int realtime;
 
   int vfilter_idx;
-  AVFilterContext* in_video_filter;   // the first filter in the video chain
-  AVFilterContext* out_video_filter;  // the last filter in the video chain
-  AVFilterContext* in_audio_filter;   // the first filter in the audio chain
-  AVFilterContext* out_audio_filter;  // the last filter in the audio chain
-  AVFilterGraph* agraph;              // audio filter graph
+  AVFilterContext* inVideoFilter;   // the first filter in the video chain
+  AVFilterContext* outVideoFilter;  // the last filter in the video chain
+  AVFilterContext* inAudioFilter;   // the first filter in the audio chain
+  AVFilterContext* outAudioFilter;  // the last filter in the audio chain
+  AVFilterGraph* agraph;            // audio filter graph
 
   sClock audclk;
   sClock vidclk;
@@ -2723,7 +2723,6 @@ public:
   int step;
   };
 //}}}
-
 //{{{
 void sdlAudioCallback (void* opaque, Uint8* stream, int len) {
 /* prepare a new audio buffer */
@@ -2942,8 +2941,8 @@ int videoThread (void* arg) {
         goto the_end;
         }
 
-      filt_in = videoState->in_video_filter;
-      filt_out = videoState->out_video_filter;
+      filt_in = videoState->inVideoFilter;
+      filt_out = videoState->outVideoFilter;
       last_w = frame->width;
       last_h = frame->height;
       last_format = (AVPixelFormat)frame->format;
@@ -3045,17 +3044,17 @@ int audioThread (void* arg) {
         videoState->audio_filter_src.freq = frame->sample_rate;
         last_serial = videoState->auddec.pkt_serial;
 
-        if ((ret = videoState->configureAudioFilters (afilters, 1)) < 0)
+        if ((ret = videoState->configureAudioFilters (audioFilters, 1)) < 0)
           goto the_end;
         }
         //}}}
 
-      if ((ret = av_buffersrc_add_frame (videoState->in_audio_filter, frame)) < 0)
+      if ((ret = av_buffersrc_add_frame (videoState->inAudioFilter, frame)) < 0)
         goto the_end;
 
-      while ((ret = av_buffersink_get_frame_flags (videoState->out_audio_filter, frame, 0)) >= 0) {
+      while ((ret = av_buffersink_get_frame_flags (videoState->outAudioFilter, frame, 0)) >= 0) {
         sFrameData* fd = frame->opaque_ref ? (sFrameData*)frame->opaque_ref->data : NULL;
-        tb = av_buffersink_get_time_base (videoState->out_audio_filter);
+        tb = av_buffersink_get_time_base (videoState->outAudioFilter);
 
         sFrame* framePeek;
         if (!(framePeek = frame_queue_peek_writable (&videoState->sampq)))
@@ -3233,9 +3232,9 @@ int streamComponentOpen (sVideoState* videoState, int stream_index) {
         goto fail;
 
       videoState->audio_filter_src.fmt = avctx->sample_fmt;
-      if ((ret = videoState->configureAudioFilters (afilters, 0)) < 0)
+      if ((ret = videoState->configureAudioFilters (audioFilters, 0)) < 0)
         goto fail;
-      sink = videoState->out_audio_filter;
+      sink = videoState->outAudioFilter;
       sample_rate = av_buffersink_get_sample_rate (sink);
       ret = av_buffersink_get_ch_layout (sink, &ch_layout);
       if (ret < 0)
@@ -4243,7 +4242,7 @@ const OptionDef options[] = {
   { "top", OPT_INT | HAS_ARG | OPT_EXPERT, { &screen_top }, "set the y position for the top of the window", "y pos" },
 
   { "vf", OPT_EXPERT | HAS_ARG, { .func_arg = opt_add_vfilter }, "set video filters", "filter_graph" },
-  { "af", OPT_STRING | HAS_ARG, { &afilters }, "set audio filters", "filter_graph" },
+  { "af", OPT_STRING | HAS_ARG, { &audioFilters }, "set audio filters", "filter_graph" },
 
   { "rdftspeed", OPT_INT | HAS_ARG| OPT_AUDIO | OPT_EXPERT, { &rdftspeed }, "rdft speed", "msecs" },
   { "showmode", HAS_ARG, { .func_arg = opt_show_mode}, "select show mode (0 = video, 1 = waves, 2 = RDFT)", "mode" },
