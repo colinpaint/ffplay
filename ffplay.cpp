@@ -529,26 +529,6 @@ public:
     }
   //}}}
   //{{{
-  int packet_queue_put (AVPacket* newPkt) {
-
-    AVPacket* pkt1 = av_packet_alloc();
-    if (!pkt1) {
-      av_packet_unref (newPkt);
-      return -1;
-      }
-    av_packet_move_ref (pkt1, newPkt);
-
-    SDL_LockMutex (mutex);
-    int ret = packet_queue_put_private (pkt1);
-    SDL_UnlockMutex (mutex);
-
-    if (ret < 0)
-      av_packet_free (&pkt1);
-
-    return ret;
-    }
-  //}}}
-  //{{{
   int packet_queue_put_nullpacket (AVPacket* newPkt, int stream_index) {
 
     pkt->stream_index = stream_index;
@@ -610,29 +590,6 @@ public:
     SDL_DestroyCond (cond);
     }
   //}}}
-  //{{{
-  void packet_queue_abort() {
-
-    SDL_LockMutex (mutex);
-
-    abort_request = 1;
-    SDL_CondSignal (cond);
-
-    SDL_UnlockMutex (mutex);
-    }
-  //}}}
-
-  //{{{
-  void packet_queue_start() {
-
-    SDL_LockMutex (mutex);
-
-    abort_request = 0;
-    serial++;
-
-    SDL_UnlockMutex (mutex);
-    }
-  //}}}
 
   //{{{
 
@@ -675,6 +632,49 @@ public:
     }
   //}}}
 
+  //{{{
+  int packet_queue_put (AVPacket* newPkt) {
+
+    AVPacket* pkt1 = av_packet_alloc();
+    if (!pkt1) {
+      av_packet_unref (newPkt);
+      return -1;
+      }
+    av_packet_move_ref (pkt1, newPkt);
+
+    SDL_LockMutex (mutex);
+    int ret = packet_queue_put_private (pkt1);
+    SDL_UnlockMutex (mutex);
+
+    if (ret < 0)
+      av_packet_free (&pkt1);
+
+    return ret;
+    }
+  //}}}
+  //{{{
+  void packet_queue_abort () {
+
+    SDL_LockMutex (mutex);
+
+    abort_request = 1;
+    SDL_CondSignal (cond);
+
+    SDL_UnlockMutex (mutex);
+    }
+  //}}}
+  //{{{
+  void packet_queue_start () {
+
+    SDL_LockMutex (mutex);
+
+    abort_request = 0;
+    serial++;
+
+    SDL_UnlockMutex (mutex);
+    }
+  //}}}
+
   AVPacket* pkt;
   AVFifo* pkt_list;
 
@@ -688,50 +688,6 @@ public:
   SDL_mutex* mutex;
   SDL_cond* cond;
   };
-//}}}
-//{{{
-int packet_queue_put (sPacketQueue* q, AVPacket* pkt) {
-
-  AVPacket* pkt1 = av_packet_alloc();
-  if (!pkt1) {
-    av_packet_unref (pkt);
-    return -1;
-    }
-  av_packet_move_ref (pkt1, pkt);
-
-  SDL_LockMutex (q->mutex);
-  int ret = q->packet_queue_put_private (pkt1);
-  SDL_UnlockMutex (q->mutex);
-
-  if (ret < 0)
-    av_packet_free (&pkt1);
-
-  return ret;
-  }
-//}}}
-//}}}
-//{{{
-void packet_queue_abort (sPacketQueue* q) {
-
-  SDL_LockMutex (q->mutex);
-
-  q->abort_request = 1;
-  SDL_CondSignal (q->cond);
-
-  SDL_UnlockMutex (q->mutex);
-  }
-//}}}
-
-//{{{
-void packet_queue_start (sPacketQueue* q) {
-
-  SDL_LockMutex (q->mutex);
-
-  q->abort_request = 0;
-  q->serial++;
-
-  SDL_UnlockMutex (q->mutex);
-  }
 //}}}
 
 //{{{
@@ -1126,7 +1082,7 @@ int decoderInit (sDecoder* d, AVCodecContext* avctx, sPacketQueue* queue, SDL_co
 //{{{
 int decoderStart (sDecoder* d, int (*fn)(void*), const char* thread_name, void* arg) {
 
-  packet_queue_start (d->queue);
+  d->queue->packet_queue_start ();
 
   d->decoder_tid = SDL_CreateThread (fn, thread_name, arg);
   if (!d->decoder_tid) {
@@ -3583,7 +3539,7 @@ int readThread (void* arg) {
       if (videoState->videoStream && videoState->videoStream->disposition & AV_DISPOSITION_ATTACHED_PIC) {
         if ((ret = av_packet_ref (pkt, &videoState->videoStream->attached_pic)) < 0)
           goto fail;
-        packet_queue_put (&videoState->videoq, pkt);
+        videoState->videoq.packet_queue_put (pkt);
         videoState->videoq.packet_queue_put_nullpacket (pkt, videoState->videoStreamId);
         }
       videoState->queue_attachments_req = 0;
@@ -3650,12 +3606,12 @@ int readThread (void* arg) {
                         (double)(gStartTime != AV_NOPTS_VALUE ? gStartTime : 0) / 1000000
                         <= ((double)gDuration / 1000000);
     if (pkt->stream_index == videoState->audioStreamId && packetInPlayRange)
-      packet_queue_put (&videoState->audioq, pkt);
+      videoState->audioq.packet_queue_put (pkt);
     else if (pkt->stream_index == videoState->videoStreamId && packetInPlayRange
              && !(videoState->videoStream->disposition & AV_DISPOSITION_ATTACHED_PIC))
-      packet_queue_put (&videoState->videoq, pkt);
+      videoState->videoq.packet_queue_put (pkt);
     else if (pkt->stream_index == videoState->subtitleStreamId && packetInPlayRange)
-      packet_queue_put (&videoState->subtitleq, pkt);
+      videoState->subtitleq.packet_queue_put (pkt);
    else
       av_packet_unref (pkt);
     }
