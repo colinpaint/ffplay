@@ -499,7 +499,7 @@ namespace {
   }
 
 //{{{
-class sClock {
+class cClock {
 public:
   //{{{
   double get_clock() {
@@ -511,17 +511,24 @@ public:
       return pts;
     else {
       double time = av_gettime_relative() / 1000000.0;
-      return pts_drift + time - (time - last_updated) * (1.0 - speed);
+      return ptsDrift + time - (time - lastUpdated) * (1.0 - speed);
       }
     }
   //}}}
+  double getLastUpdated() { return lastUpdated; }
+  double getPts() { return pts; }
+  double getSpeed() { return speed; }
+  int getSerial() { return serial; }
+  int getPaused() { return paused; }
+
+  void setPaused (int newPaused) { paused = newPaused; }
 
   //{{{
   void set_clock_at (double newPts, int newSerial, double time) {
 
     this->pts = newPts;
-    this->last_updated = time;
-    this->pts_drift = this->pts - time;
+    this->lastUpdated = time;
+    this->ptsDrift = this->pts - time;
     this->serial = newSerial;
     }
   //}}}
@@ -533,7 +540,7 @@ public:
     }
   //}}}
   //{{{
-  void sync_clock_to_slave (sClock* slave) {
+  void sync_clock_to_slave (cClock* slave) {
 
     double clockValue = get_clock();
     double slaveClockValue = slave->get_clock();
@@ -562,11 +569,11 @@ public:
     set_clock (NAN, -1);
     }
   //}}}
-
+private:
   double pts;           /* clock base */
-  double pts_drift;     /* clock base minus time at which we updated the clock */
+  double ptsDrift;     /* clock base minus time at which we updated the clock */
 
-  double last_updated;
+  double lastUpdated;
   double speed;
 
   int serial;           /* clock is based on a packet with this serial */
@@ -1216,7 +1223,7 @@ public:
 
    videoState->vidclk.init_clock (&videoState->videoq.serial);
    videoState->audclk.init_clock (&videoState->audioq.serial);
-   videoState->extclk.init_clock (&videoState->extclk.serial);
+   videoState->extclk.init_clock (&videoState->extclk.getSerial());
    videoState->audio_clock_serial = -1;
    if (gStartupVolume < 0)
      av_log (NULL, AV_LOG_WARNING, "-volume=%d < 0, setting to 0\n", gStartupVolume);
@@ -1290,15 +1297,15 @@ public:
   void check_external_clock_speed() {
 
     if (videoStreamId >= 0 && videoq.nb_packets <= EXTERNAL_CLOCK_MIN_FRAMES ||
-        audioStreamId >= 0 && audioq.nb_packets <= EXTERNAL_CLOCK_MIN_FRAMES)
-      extclk.set_clock_speed (FFMAX(EXTERNAL_CLOCK_SPEED_MIN, extclk.speed - EXTERNAL_CLOCK_SPEED_STEP));
+        audioStreamId >= 0 && audioq.nb_packets <= EXTERNAL_CLOCK_MIN/_FRAMES)
+      extclk.set_clock_speed (FFMAX(EXTERNAL_CLOCK_SPEED_MIN, extclk.getSpeed() - EXTERNAL_CLOCK_SPEED_STEP));
 
     else if ((videoStreamId < 0 || videoq.nb_packets > EXTERNAL_CLOCK_MAX_FRAMES) &&
              (audioStreamId < 0 || audioq.nb_packets > EXTERNAL_CLOCK_MAX_FRAMES))
-      extclk.set_clock_speed (FFMIN(EXTERNAL_CLOCK_SPEED_MAX, extclk.speed + EXTERNAL_CLOCK_SPEED_STEP));
+      extclk.set_clock_speed (FFMIN(EXTERNAL_CLOCK_SPEED_MAX, extclk.getSpeed() + EXTERNAL_CLOCK_SPEED_STEP));
 
     else {
-      double speed = extclk.speed;
+      double speed = extclk.getSpeed();
       if (speed != 1.0)
         extclk.set_clock_speed (speed + EXTERNAL_CLOCK_SPEED_STEP * (1.0 - speed) / fabs(1.0 - speed));
       }
@@ -1575,7 +1582,7 @@ public:
           double diff = dpts - get_master_clock();
           if (!isnan (diff) && fabs (diff) < AV_NOSYNC_THRESHOLD &&
               diff - frame_last_filter_delay < 0 &&
-              viddec.pkt_serial == vidclk.serial &&
+              viddec.pkt_serial == vidclk.getSerial() &&
               videoq.nb_packets) {
             frame_drops_early++;
             av_frame_unref (frame);
@@ -2004,8 +2011,8 @@ public:
               sp2 = NULL;
 
             if (sp->serial != subtitleq.serial ||
-                (vidclk.pts > (sp->pts + ((float) sp->sub.end_display_time / 1000))) ||
-                (sp2 && vidclk.pts > (sp2->pts + ((float) sp2->sub.start_display_time / 1000)))) {
+                (vidclk.getPts() > (sp->pts + ((float) sp->sub.end_display_time / 1000))) ||
+                (sp2 && vidclk.getPts() > (sp2->pts + ((float)sp2->sub.start_display_time / 1000)))) {
               if (sp->uploaded) {
                 for (int i = 0; i < (int)sp->sub.num_rects; i++) {
                   AVSubtitleRect* sub_rect = sp->sub.rects[i];
@@ -2393,15 +2400,18 @@ public:
   /* pause or resume the video */
 
     if (paused) {
-      frame_timer += av_gettime_relative() / 1000000.0 - vidclk.last_updated;
+      frame_timer += av_gettime_relative() / 1000000.0 - vidclk.getLastUpdated();
       if (read_pause_return != AVERROR(ENOSYS))
-        vidclk.paused = 0;
+        vidclk.setPaused(0);
 
-      vidclk.set_clock (vidclk.get_clock(), vidclk.serial);
+      vidclk.set_clock (vidclk.get_clock(), vidclk.getSerial());
       }
 
-    extclk.set_clock (extclk.get_clock(), extclk.serial);
-    paused = audclk.paused = vidclk.paused = extclk.paused = !paused;
+    extclk.set_clock (extclk.get_clock(), extclk.getSerial());
+    audclk.setPaused (!paused);
+    vidclk.setPaused (!paused);
+    extclk.setPaused (!paused);
+    paused = !paused;
     }
   //}}}
   //{{{
@@ -3568,9 +3578,9 @@ public:
   AVFilterContext* outAudioFilter;  // the last filter in the audio chain
   AVFilterGraph* agraph;            // audio filter graph
 
-  sClock audclk;
-  sClock vidclk;
-  sClock extclk;
+  cClock audclk;
+  cClock vidclk;
+  cClock extclk;
 
   cFrameQueue pictq;
   cFrameQueue subpq;
