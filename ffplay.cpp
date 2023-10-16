@@ -423,23 +423,24 @@ namespace {
   //{{{
   int uploadTexture (SDL_Texture** tex, AVFrame* frame) {
 
-    Uint32 sdl_pix_fmt;
+    Uint32 sdlPixelFormat;
     SDL_BlendMode sdl_blendmode;
-    getSdlPixfmtAndBlendmode (frame->format, &sdl_pix_fmt, &sdl_blendmode);
+    getSdlPixfmtAndBlendmode (frame->format, &sdlPixelFormat, &sdl_blendmode);
 
-    if (reallocTexture (tex, sdl_pix_fmt == SDL_PIXELFORMAT_UNKNOWN ? SDL_PIXELFORMAT_ARGB8888 : sdl_pix_fmt,
+    if (reallocTexture (tex,
+      sdlPixelFormat == SDL_PIXELFORMAT_UNKNOWN ? SDL_PIXELFORMAT_ARGB8888 : sdlPixelFormat,
                         frame->width, frame->height, sdl_blendmode, 0) < 0)
       return -1;
 
     int ret = 0;
-    switch (sdl_pix_fmt) {
+    switch (sdlPixelFormat) {
       case SDL_PIXELFORMAT_IYUV:
-        if (frame->linesize[0] > 0 && frame->linesize[1] > 0 && frame->linesize[2] > 0)
+        if ((frame->linesize[0] > 0) && (frame->linesize[1] > 0) && (frame->linesize[2] > 0))
           ret = SDL_UpdateYUVTexture (*tex, NULL,
                                       frame->data[0], frame->linesize[0],
                                       frame->data[1], frame->linesize[1],
                                       frame->data[2], frame->linesize[2]);
-        else if (frame->linesize[0] < 0 && frame->linesize[1] < 0 && frame->linesize[2] < 0)
+        else if ((frame->linesize[0] < 0) && (frame->linesize[1] < 0) && (frame->linesize[2] < 0))
           ret = SDL_UpdateYUVTexture (*tex, NULL,
                                       frame->data[0] + frame->linesize[0] * (frame->height - 1), -frame->linesize[0],
                                       frame->data[1] + frame->linesize[1] * (AV_CEIL_RSHIFT(frame->height, 1) - 1), -frame->linesize[1],
@@ -569,6 +570,10 @@ public:
     set_clock (NAN, -1);
     }
   //}}}
+
+  // should be private
+  int serial;           /* clock is based on a packet with this serial */
+
 private:
   double pts;           /* clock base */
   double ptsDrift;     /* clock base minus time at which we updated the clock */
@@ -576,7 +581,6 @@ private:
   double lastUpdated;
   double speed;
 
-  int serial;           /* clock is based on a packet with this serial */
   int paused;
   int* queue_serial;    /* pointer to the current packet queue serial, used for obsolete clock detection */
   };
@@ -862,6 +866,7 @@ public:
     return 0;
     }
   //}}}
+
   //{{{
   void frame_queue_destroy() {
 
@@ -883,6 +888,7 @@ public:
     SDL_UnlockMutex (mutex);
     }
   //}}}
+
   //{{{
   cFrame* frame_queue_peek() {
     return &queue[(rindex + rindexShown) % maxSize];
@@ -930,6 +936,7 @@ public:
     return &queue[(rindex + rindexShown) % maxSize];
     }
   //}}}
+
   //{{{
   void frame_queue_push() {
 
@@ -960,6 +967,7 @@ public:
     SDL_UnlockMutex (mutex);
     }
   //}}}
+
   //{{{
   /* return the number of undisplayed frames in the queue */
   int frame_queue_nb_remaining() {
@@ -1223,7 +1231,7 @@ public:
 
    videoState->vidclk.init_clock (&videoState->videoq.serial);
    videoState->audclk.init_clock (&videoState->audioq.serial);
-   videoState->extclk.init_clock (&videoState->extclk.getSerial());
+   videoState->extclk.init_clock (&videoState->extclk.serial);
    videoState->audio_clock_serial = -1;
    if (gStartupVolume < 0)
      av_log (NULL, AV_LOG_WARNING, "-volume=%d < 0, setting to 0\n", gStartupVolume);
@@ -1297,7 +1305,7 @@ public:
   void check_external_clock_speed() {
 
     if (videoStreamId >= 0 && videoq.nb_packets <= EXTERNAL_CLOCK_MIN_FRAMES ||
-        audioStreamId >= 0 && audioq.nb_packets <= EXTERNAL_CLOCK_MIN/_FRAMES)
+        audioStreamId >= 0 && audioq.nb_packets <= EXTERNAL_CLOCK_MIN_FRAMES)
       extclk.set_clock_speed (FFMAX(EXTERNAL_CLOCK_SPEED_MIN, extclk.getSpeed() - EXTERNAL_CLOCK_SPEED_STEP));
 
     else if ((videoStreamId < 0 || videoq.nb_packets > EXTERNAL_CLOCK_MAX_FRAMES) &&
